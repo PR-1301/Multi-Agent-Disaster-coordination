@@ -8,14 +8,14 @@ import AdminAgent from './pages/AdminAgent';
 import { useMockData } from './hooks/useMockData';
 
 function App() {
-  const { complaints, ngos, hospitals, admin } = useMockData();
+  const { complaints, ngos, hospitals, admin, addTestComplaint } = useMockData();
 
   return (
     <Router>
       <HudLayout>
         <Routes>
           <Route path="/" element={<Navigate to="/complaint" replace />} />
-          <Route path="/complaint" element={<ComplaintAgent data={complaints} />} />
+          <Route path="/complaint" element={<ComplaintAgent data={complaints} onAddComplaint={addTestComplaint} />} />
           <Route path="/ngo" element={<NgoAgent data={ngos} />} />
           <Route path="/hospital" element={<HospitalAgent data={hospitals} />} />
           <Route path="/admin" element={<AdminAgent data={admin} />} />

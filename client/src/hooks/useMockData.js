@@ -6,10 +6,21 @@ export const useMockData = () => {
   const [complaints, setComplaints] = useState({
     totalOpen: 142,
     flagged: 12,
-    feed: Array.from({ length: 5 }).map((_, i) => createMockComplaint(i)),
+    feed: Array.from({ length: 8 }).map((_, i) => createMockComplaint(`init_${i}`)),
     volumeTrend: [40, 30, 45, 60, 80, 50, 90, 110, 80, 95, 130, 142],
     logs: [{ id: 'init', timestamp: Date.now(), text: 'System initialized. Listening for signals...' }]
   });
+
+  const addTestComplaint = () => {
+    const now = Date.now();
+    const newComplaint = createMockComplaint(now);
+    setComplaints(prev => ({
+      ...prev,
+      totalOpen: prev.totalOpen + 1,
+      feed: [newComplaint, ...prev.feed].slice(0, 20),
+      logs: [...prev.logs, { id: now, timestamp: now, text: `[MANUAL_INTAKE] Test complaint registered from ${newComplaint.callerRef}` }].slice(-15)
+    }));
+  };
 
   // NGO Data
   const [ngos, setNgos] = useState({
@@ -44,7 +55,7 @@ export const useMockData = () => {
   });
 
   useEffect(() => {
-    // Simulate real-time updates every 3 seconds
+    // Simulate real-time updates every 3.5 seconds
     const interval = setInterval(() => {
       const now = Date.now();
       
@@ -144,25 +155,44 @@ export const useMockData = () => {
     return () => clearInterval(interval);
   }, []);
 
-  return { complaints, ngos, hospitals, admin };
+  return { complaints, ngos, hospitals, admin, addTestComplaint };
 };
 
+const PHONE_PREFIXES = ['98192', '98765', '91402', '99381', '87629', '70192', '94120', '88392', '97654', '95012', '93821', '81092', '76543'];
+const SAMPLE_COMPLAINTS = [
+  'Trapped on rooftop in Sector 4, water levels rising rapidly.',
+  'Family of 5 stranded with no drinking water or electricity since morning.',
+  'Elderly victim with severe leg injury needs immediate medical triage.',
+  'Smoke inhalation & breathing difficulty reported near commercial building.',
+  'Bridge flooded, 3 vehicles submerged with passengers stranded.',
+  'Need emergency shelter & thermal blankets for infants and mothers.',
+  'Power outage at local clinic, critical vaccine storage failing.',
+  'Building wall showing deep structural cracks after water surge.',
+  'Clean water supply contaminated, multiple residents reporting illness.',
+  'Requesting emergency rescue boat dispatch to Sector 12 embankment.',
+  'Pani ka bahav tez hai, ghar me 4 log phanse hue hain.',
+  'Ration aur saaf paani ki sakht zaroorat hai sector 3 me.'
+];
 
 // Helpers
 const createMockComplaint = (id) => {
   const urgencies = ['low', 'medium', 'high', 'critical'];
   const sources = ['llm', 'heuristic', 'manual'];
+  const prefix = PHONE_PREFIXES[Math.floor(Math.random() * PHONE_PREFIXES.length)];
+  const suffix = Math.floor(10000 + Math.random() * 90000);
+  const text = SAMPLE_COMPLAINTS[Math.floor(Math.random() * SAMPLE_COMPLAINTS.length)];
+  
   return {
     id: `C-${id}-${Math.floor(Math.random() * 1000)}`,
-    callerRef: `+91 98${Math.floor(Math.random() * 10000000)}`,
+    callerRef: `+91 ${prefix} ${suffix}`,
     channel: Math.random() > 0.5 ? 'whatsapp' : 'call',
-    originalText: 'Need help urgently, water is rising.',
-    lang: Math.random() > 0.5 ? 'ENG' : 'HIN',
-    sectorId: `S-${Math.floor(Math.random() * 20)}`,
+    originalText: text,
+    lang: Math.random() > 0.4 ? 'ENG' : 'HIN',
+    sectorId: `S-${Math.floor(Math.random() * 20) + 1}`,
     urgency: urgencies[Math.floor(Math.random() * urgencies.length)],
     triageScore: Math.floor(Math.random() * 5) + 1,
     source: sources[Math.floor(Math.random() * sources.length)],
-    isDuplicate: Math.random() > 0.8,
+    isDuplicate: Math.random() > 0.85,
     status: Math.random() > 0.2 ? 'open' : 'flagged_for_review',
     createdAt: Date.now() - Math.floor(Math.random() * 600000)
   };

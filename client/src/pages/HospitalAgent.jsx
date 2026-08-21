@@ -46,54 +46,54 @@ const HospitalAgent = ({ data }) => {
   return (
     <div className="h-full flex flex-col gap-4 text-[#e0f7fa]" style={{ '--tw-text-opacity': 1 }}>
       {/* Top Bar */}
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <PlusSquare size={24} color={THEME.primary} />
-          <h1 className="text-2xl font-bold tracking-widest text-[#00e5ff]">TRIAGE // MEDICAL COMMAND</h1>
-          <div className="flex items-center gap-2 ml-4 px-3 py-1 bg-[#00e5ff]/10 border border-[#00e5ff]/30 rounded-full">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-widest text-[#00e5ff]">TRIAGE // MEDICAL COMMAND</h1>
+          <div className="flex items-center gap-2 px-3 py-1 bg-[#00e5ff]/10 border border-[#00e5ff]/30 rounded-full">
              <div className="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse" />
              <span className="text-xs font-mono text-[#00e5ff]">LIVE</span>
           </div>
         </div>
-        <div className="flex items-center gap-8">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
           <div className="flex flex-col items-end">
             <span className="text-[10px] text-[#00e5ff] uppercase tracking-widest">Available Beds</span>
-            <AnimatedNumber value={availableBeds} className="text-2xl text-white" />
+            <AnimatedNumber value={availableBeds} className="text-xl sm:text-2xl text-white font-bold" />
           </div>
           <div className="flex flex-col items-end">
             <span className="text-[10px] text-[#2979ff] uppercase tracking-widest">ICU Beds</span>
-            <AnimatedNumber value={icuBeds} className="text-2xl text-white" />
+            <AnimatedNumber value={icuBeds} className="text-xl sm:text-2xl text-white font-bold" />
           </div>
           <div className="flex flex-col items-end">
             <span className="text-[10px] text-[#00e5ff] uppercase tracking-widest">Ambulances</span>
-            <AnimatedNumber value={ambulances} className="text-2xl text-white" />
+            <AnimatedNumber value={ambulances} className="text-xl sm:text-2xl text-white font-bold" />
           </div>
-          <div className="font-mono text-xl text-[#00e5ff]/80 tracking-widest bg-black/40 px-4 py-2 border border-[#00e5ff]/20">
+          <div className="font-mono text-lg sm:text-xl text-[#00e5ff]/80 tracking-widest bg-black/40 px-3 py-1.5 border border-[#00e5ff]/20">
             {time}
           </div>
         </div>
       </header>
 
       {/* Main Grid */}
-      <div className="flex-1 grid grid-cols-12 gap-4 min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
         
         {/* Left: Hospital Grid */}
-        <HudPanel title="Hospital Grid" color={THEME.primary} className="col-span-3">
-          <div className="relative w-full h-full min-h-[300px] border border-[#00e5ff]/20 bg-black/40 overflow-hidden flex items-center justify-center rounded-full">
+        <HudPanel title="Hospital Grid" color={THEME.primary} className="lg:col-span-3 min-h-[220px]">
+          <div className="relative w-full h-full min-h-[200px] border border-[#00e5ff]/20 bg-black/40 overflow-hidden flex items-center justify-center rounded-full p-4">
              {/* Slow rotating scan-ring */}
              <motion.div 
                animate={{ rotate: -360 }}
                transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-               className="absolute inset-2 border-2 border-dashed border-[#00e5ff]/30 rounded-full"
+               className="absolute inset-2 border-2 border-dashed border-[#00e5ff]/30 rounded-full pointer-events-none"
              />
-             <div className="absolute inset-0 flex items-center justify-center">
+             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-3 h-3 bg-[#00e5ff] rounded-full animate-pulse" style={{boxShadow: `0 0 20px ${THEME.primary}`}} />
              </div>
              
              {/* Radial nodes */}
              {facilities.map((hosp, i) => {
                const angle = (i / facilities.length) * Math.PI * 2;
-               const radius = 100;
+               const radius = 68;
                const x = Math.cos(angle) * radius;
                const y = Math.sin(angle) * radius;
                
@@ -104,21 +104,21 @@ const HospitalAgent = ({ data }) => {
                return (
                  <div 
                    key={hosp.id} 
-                   className="absolute flex flex-col items-center justify-center"
+                   className="absolute flex flex-col items-center justify-center -translate-x-1/2 -translate-y-1/2"
                    style={{ transform: `translate(${x}px, ${y}px)` }}
                  >
                    <motion.div 
-                     className="rounded-full flex items-center justify-center border bg-black/60"
+                     className="rounded-full flex items-center justify-center border bg-black/80"
                      style={{ 
-                       width: 30 + (hosp.bedCount / 10), 
-                       height: 30 + (hosp.bedCount / 10),
+                       width: 26 + (hosp.bedCount / 12), 
+                       height: 26 + (hosp.bedCount / 12),
                        borderColor: nodeColor,
-                       boxShadow: `0 0 10px ${nodeColor}50`
+                       boxShadow: `0 0 8px ${nodeColor}60`
                      }}
                    >
-                     {hosp.divert ? <AlertCircle size={14} color={THEME.critical} /> : <PlusSquare size={14} color={nodeColor} />}
+                     {hosp.divert ? <AlertCircle size={12} color={THEME.critical} /> : <PlusSquare size={12} color={nodeColor} />}
                    </motion.div>
-                   <span className="text-[8px] font-mono mt-1 opacity-80 whitespace-nowrap">{hosp.name}</span>
+                   <span className="text-[8px] font-mono mt-0.5 text-white bg-black/80 px-1 rounded border border-[#00e5ff]/20 whitespace-nowrap">{hosp.name}</span>
                  </div>
                );
              })}
@@ -126,34 +126,34 @@ const HospitalAgent = ({ data }) => {
         </HudPanel>
 
         {/* Center: Facilities Table */}
-        <HudPanel title="Facilities & Bed Status" color={THEME.primary} className="col-span-6" isReceiving={true}>
-          <div className="flex flex-col gap-3 h-full overflow-y-auto pr-2">
+        <HudPanel title="Facilities & Bed Status" color={THEME.primary} className="lg:col-span-6 min-h-[350px]" isReceiving={true}>
+          <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
             {facilities.map((hosp) => (
-              <div key={hosp.id} className="p-3 bg-black/60 border border-[#00e5ff]/20 flex flex-col gap-3 relative overflow-hidden">
+              <div key={hosp.id} className="p-3.5 bg-black/60 border border-[#00e5ff]/25 flex flex-col gap-3 relative overflow-hidden rounded-sm">
                 {hosp.divert && <div className="absolute inset-0 bg-[#ff1744]/10 pointer-events-none" />}
                 
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${hosp.divert ? 'bg-[#ff1744]' : 'bg-[#00e5ff]'}`} />
-                    <span className="font-bold tracking-wider">{hosp.name}</span>
-                    {hosp.divert && <span className="ml-2 text-[10px] bg-[#ff1744] text-white px-2 py-0.5 uppercase tracking-widest animate-pulse">Divert Active</span>}
+                    <div className={`w-2.5 h-2.5 rounded-full ${hosp.divert ? 'bg-[#ff1744] animate-pulse' : 'bg-[#00e5ff]'}`} />
+                    <span className="font-bold tracking-wider text-white text-sm">{hosp.name}</span>
+                    {hosp.divert && <span className="ml-2 text-[10px] bg-[#ff1744] text-white px-2 py-0.5 uppercase tracking-widest animate-pulse font-bold rounded">Divert Active</span>}
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-12 gap-4 items-center font-mono text-sm">
-                   <div className="col-span-3 flex flex-col gap-1">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 items-center font-mono text-sm">
+                   <div className="sm:col-span-3 flex flex-col gap-0.5">
                      <span className="text-gray-400 text-[10px]">WARD BEDS</span>
-                     <div className="flex items-center gap-2 text-[#00e5ff] text-lg">
-                       <PlusSquare size={16} /> <AnimatedNumber value={hosp.bedCount} />
+                     <div className="flex items-center gap-2 text-[#00e5ff] text-base font-bold">
+                       <PlusSquare size={15} /> <AnimatedNumber value={hosp.bedCount} />
                      </div>
                    </div>
-                   <div className="col-span-3 flex flex-col gap-1">
+                   <div className="sm:col-span-3 flex flex-col gap-0.5">
                      <span className="text-gray-400 text-[10px]">ICU BEDS</span>
-                     <div className="flex items-center gap-2 text-[#2979ff] text-lg">
-                       <Activity size={16} /> <AnimatedNumber value={hosp.icuCount} />
+                     <div className="flex items-center gap-2 text-[#2979ff] text-base font-bold">
+                       <Activity size={15} /> <AnimatedNumber value={hosp.icuCount} />
                      </div>
                    </div>
-                   <div className="col-span-6 flex flex-col gap-1">
+                   <div className="sm:col-span-6 flex flex-col gap-0.5">
                      <span className="text-gray-400 text-[10px]">SATURATION</span>
                      <SaturationGradient percentage={hosp.saturation} />
                    </div>
@@ -164,33 +164,33 @@ const HospitalAgent = ({ data }) => {
         </HudPanel>
 
         {/* Right: Queue & Telemetry */}
-        <div className="col-span-3 flex flex-col gap-4 min-h-0">
-          <HudPanel title="Routing Queue" color={THEME.primary} className="flex-1 min-h-0">
-            <div className="flex flex-col gap-2">
+        <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
+          <HudPanel title="Routing Queue" color={THEME.primary} className="flex-1 min-h-[150px]">
+            <div className="flex flex-col gap-2 overflow-y-auto pr-1">
               <AnimatePresence>
                 {queue.map(q => (
                   <motion.div 
                     key={q.id}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className={`p-2 border-l-2 text-xs font-mono flex flex-col gap-1 ${
+                    className={`p-2 border-l-2 text-xs font-mono flex flex-col gap-1 rounded-r ${
                       q.urgency === 'critical' ? 'border-[#ff1744] bg-[#ff1744]/10' : 'border-[#00e5ff] bg-[#00e5ff]/10'
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className={q.urgency === 'critical' ? 'text-[#ff1744] font-bold' : 'text-[#00e5ff]'}>{q.id}</span>
-                      <span className={`px-1 text-[9px] uppercase ${q.urgency === 'critical' ? 'bg-[#ff1744] text-white' : 'bg-[#00e5ff]/20 text-[#00e5ff]'}`}>
+                      <span className={q.urgency === 'critical' ? 'text-[#ff1744] font-bold' : 'text-[#00e5ff] font-semibold'}>{q.id}</span>
+                      <span className={`px-1.5 py-0.2 text-[9px] uppercase font-bold rounded ${q.urgency === 'critical' ? 'bg-[#ff1744] text-white' : 'bg-[#00e5ff]/20 text-[#00e5ff]'}`}>
                         {q.urgency}
                       </span>
                     </div>
                     <div className="text-gray-300 flex justify-between">
-                      <span>{q.facility}</span>
-                      <span className="text-gray-500">{q.distance}km</span>
+                      <span className="font-medium">{q.facility}</span>
+                      <span className="text-gray-400">{q.distance}km</span>
                     </div>
-                    <div className="flex items-center gap-1 mt-1 text-[10px]">
+                    <div className="flex items-center gap-1 mt-0.5 text-[10px]">
                       {q.status === 'pending' && <><motion.div animate={{rotate:360}} transition={{repeat:Infinity, duration:1}} className="w-2 h-2 border-t border-[#00e5ff] rounded-full"/> ROUTING...</>}
-                      {q.status === 'confirmed' && <><CheckCircle2 size={12} color="#00ff88" /> <span className="text-[#00ff88]">CONFIRMED</span></>}
-                      {q.status === 'failed' && <><XCircle size={12} color="#ff1744" /> <span className="text-[#ff1744]">DIVERTED</span></>}
+                      {q.status === 'confirmed' && <><CheckCircle2 size={12} color="#00ff88" /> <span className="text-[#00ff88] font-bold">CONFIRMED</span></>}
+                      {q.status === 'failed' && <><XCircle size={12} color="#ff1744" /> <span className="text-[#ff1744] font-bold">DIVERTED</span></>}
                     </div>
                   </motion.div>
                 ))}
@@ -199,9 +199,9 @@ const HospitalAgent = ({ data }) => {
           </HudPanel>
           
           <HudPanel title="Network Telemetry" color={THEME.primary} className="flex-none">
-            <div className="grid grid-cols-2 gap-4 place-items-center">
-              <Gauge value={88} label="ICU Occ." color={THEME.warning} size={90} />
-              <Gauge value={24} label="Rout. Time" color={THEME.secondary} size={90} unit="s" />
+            <div className="grid grid-cols-2 gap-2 place-items-center">
+              <Gauge value={88} label="ICU Occ." color={THEME.warning} size={85} />
+              <Gauge value={24} label="Rout. Time" color={THEME.secondary} size={85} unit="s" />
             </div>
           </HudPanel>
         </div>
@@ -209,20 +209,20 @@ const HospitalAgent = ({ data }) => {
       </div>
 
       {/* Bottom Controls */}
-      <div className="grid grid-cols-3 gap-4 font-mono text-xs">
-        <HudPanel title="Live Counters" color={THEME.primary} className="col-span-2 h-24 p-2">
-           <div className="flex gap-4 h-full items-center pl-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+        <HudPanel title="Live Counters" color={THEME.primary} className="md:col-span-2 min-h-[90px] p-2">
+           <div className="flex flex-wrap gap-2 h-full items-center justify-start sm:justify-around px-2">
              {['Admit WARD', 'Discharge WARD', 'Admit ICU', 'Discharge ICU'].map(action => (
-               <button key={action} className="px-3 py-2 bg-black border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 transition-all flex items-center gap-2">
-                 <Activity size={14} /> {action}
+               <button key={action} className="px-3 py-1.5 bg-black border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 transition-all flex items-center gap-1.5 rounded cursor-pointer text-xs shrink-0 font-medium">
+                 <Activity size={13} /> {action}
                </button>
              ))}
            </div>
         </HudPanel>
-        <HudPanel title="Emergency Control" color={THEME.primary} className="col-span-1 h-24 p-2">
+        <HudPanel title="Emergency Control" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
            <div className="flex h-full items-center justify-center">
-             <button className="px-6 py-2 bg-[#ff1744]/20 border border-[#ff1744] text-[#ff1744] font-bold tracking-widest hover:bg-[#ff1744] hover:text-white transition-all flex items-center gap-2">
-               <AlertCircle size={16} /> TRIGGER NETWORK DIVERT
+             <button className="px-4 py-2 bg-[#ff1744]/20 border border-[#ff1744] text-[#ff1744] font-bold tracking-wider hover:bg-[#ff1744] hover:text-white transition-all flex items-center gap-2 rounded cursor-pointer text-xs">
+               <AlertCircle size={15} /> TRIGGER NETWORK DIVERT
              </button>
            </div>
         </HudPanel>
