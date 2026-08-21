@@ -52,8 +52,74 @@ async function runScenario() {
     console.log('Done. Check escalations and capacity risk.');
     process.exit(0);
 
+  } else if (scenario === 'load-test') {
+    console.log('Running load-test scenario...');
+    const count = parseInt(args[1]) || 10000;
+    const batchSize = parseInt(args[2]) || 100;
+    
+    function pLimit(concurrency) {
+      const queue = [];
+      let active = 0;
+      const next = () => { active--; if (queue.length > 0) queue.shift()(); };
+      const run = async (fn, resolve, reject, args) => {
+        active++;
+        try { resolve(await fn(...args)); } catch (e) { reject(e); }
+        next();
+      };
+      const enqueue = (fn, ...args) => new Promise((resolve, reject) => {
+        const task = () => run(fn, resolve, reject, args);
+        if (active < concurrency) task(); else queue.push(task);
+      });
+      return enqueue;
+    }
+    
+    const limit = pLimit(batchSize);
+
+    console.log(`Firing ${count} complaints with concurrency ${batchSize}...`);
+    
+    let successes = 0;
+    let errors = 0;
+    const latencies = [];
+    
+    const startTime = Date.now();
+    
+    const tasks = Array.from({ length: count }).map((_, i) => limit(async () => {
+      const reqStart = Date.now();
+      try {
+        await axios.post(`${API_URL}/complaints`, {
+          sector_id: `sector_${i % 5}`,
+          caller_ref: `load_${i}`,
+          description: i % 10 === 0 
+            ? `Critical structural collapse, people trapped inside burning building` 
+            : `Water supply cut off, need help soon`,
+          urgency: i % 10 === 0 ? 'critical' : 'low',
+          location: { lat: 40.71 + (Math.random()*0.1), lng: -74.00 + (Math.random()*0.1) }
+        });
+        successes++;
+        latencies.push(Date.now() - reqStart);
+      } catch (err) {
+        errors++;
+      }
+    }));
+
+    await Promise.all(tasks);
+    const totalTime = Date.now() - startTime;
+    
+    latencies.sort((a,b) => a-b);
+    const p50 = latencies[Math.floor(latencies.length * 0.5)] || 0;
+    const p95 = latencies[Math.floor(latencies.length * 0.95)] || 0;
+    
+    console.log(`\n=== Load Test Results ===`);
+    console.log(`Total complaints: ${count}`);
+    console.log(`Total time: ${totalTime}ms (${(count / (totalTime/1000)).toFixed(2)} req/s)`);
+    console.log(`Successes: ${successes}`);
+    console.log(`Errors: ${errors}`);
+    console.log(`P50 Latency: ${p50}ms`);
+    console.log(`P95 Latency: ${p95}ms`);
+    process.exit(0);
+
   } else {
-    console.log('Unknown scenario. Use: mass-casualty or resource-drought');
+    console.log('Unknown scenario. Use: mass-casualty, resource-drought, or load-test');
   }
 }
 

@@ -140,4 +140,32 @@ router.post('/parse-query', async (req, res) => {
   }
 });
 
+router.get('/health', (req, res) => {
+  const adminAgent = require('../agents/adminAgent');
+  const agentBus = require('../services/agentBus');
+  const uptimeSeconds = (Date.now() - adminAgent.stats.startTime) / 1000;
+  
+  const throughput = uptimeSeconds > 0 ? (adminAgent.stats.processedCases / uptimeSeconds).toFixed(2) : 0;
+  const avgE2ELatency = adminAgent.stats.resolvedCount > 0 ? Math.round(adminAgent.stats.totalE2ELatency / adminAgent.stats.resolvedCount) : 0;
+  
+  const autoResolved = adminAgent.stats.resolvedCount || 0;
+  const escalated = adminAgent.stats.escalatedCount || 0;
+  const totalCompleted = autoResolved + escalated;
+  const autoRatio = totalCompleted > 0 ? ((autoResolved / totalCompleted) * 100).toFixed(1) : 100;
+
+  res.json({
+    queueDepth: adminAgent.intakeLimiter.pendingCount,
+    throughput_cases_per_sec: parseFloat(throughput),
+    avg_e2e_latency_ms: avgE2ELatency,
+    circuitBreaker: {
+      state: adminAgent.circuitBreaker.state,
+      failures: adminAgent.circuitBreaker.failures
+    },
+    loadGovernorActive: !!adminAgent._governorActive,
+    auto_vs_escalated_ratio: `${autoRatio}% auto-resolved`,
+    db_write_latency_ms: agentBus.lastDbLatency || 0,
+    uptime_seconds: Math.round(uptimeSeconds)
+  });
+});
+
 module.exports = router;

@@ -10,12 +10,52 @@ const crypto = require('crypto');
 const { callLLM } = require('../services/llmClient');
 const config = require('../config/adminAgentConfig');
 
+function pLimit(concurrency) {
+  const queue = [];
+  let active = 0;
+  
+  const next = () => {
+    active--;
+    if (queue.length > 0) queue.shift()();
+  };
+  
+  const run = async (fn, resolve, reject, args) => {
+    active++;
+    try {
+      resolve(await fn(...args));
+    } catch (e) {
+      reject(e);
+    }
+    next();
+  };
+  
+  const enqueue = (fn, ...args) => {
+    return new Promise((resolve, reject) => {
+      const task = () => run(fn, resolve, reject, args);
+      if (active < concurrency) {
+        task();
+      } else {
+        queue.push(task);
+      }
+    });
+  };
+  
+  Object.defineProperty(enqueue, 'pendingCount', { get: () => queue.length });
+  
+  return enqueue;
+}
+
 class AdminAgent {
   constructor() {
     this.activeBids = {};
     this.capacityHistory = {};
     this.capacityRisk = {};
     this.circuitBreaker = { state: 'closed', failures: 0, openUntil: 0 };
+    this.intakeLimiter = pLimit(config.ADMIN_AGENT_CONCURRENCY);
+    this.llmLimiter = pLimit(config.LLM_CONCURRENCY);
+    this.llmCache = new Map();
+    this.llmLatencyHistory = [];
+    this.stats = { processedCases: 0, startTime: Date.now() };
     this.setupListeners();
     
     // Scheduled recalibration
@@ -32,10 +72,32 @@ class AdminAgent {
     });
 
     agentBus.on('case.created', async ({ case_id, payload }) => {
-      this.handleCaseCreated(case_id, payload);
+      const qDepth = this.intakeLimiter.pendingCount;
+      if (qDepth >= config.QUEUE_HARD_CAPACITY) {
+        await Case.updateOne({ case_id }, { status: 'deferred' });
+        await EventLog.create({
+          case_id,
+          event: 'case.shed',
+          payload: { reason: 'Queue hard capacity reached', capacity: config.QUEUE_HARD_CAPACITY }
+        });
+        return;
+      }
+      this.intakeLimiter(() => {
+        const start = Date.now();
+        return this.handleCaseCreated(case_id, payload, qDepth).then(() => {
+          this.stats.processedCases++;
+        });
+      }).catch(console.error);
     });
 
     agentBus.on('assignment.confirmed', async ({ case_id, payload }) => {
+      const c = await Case.findOne({ case_id });
+      if (c) {
+        const e2e = Date.now() - c.created_at.getTime();
+        this.stats.totalE2ELatency = (this.stats.totalE2ELatency || 0) + e2e;
+        this.stats.resolvedCount = (this.stats.resolvedCount || 0) + 1;
+      }
+      
       await Case.updateOne(
         { case_id },
         { 
@@ -49,6 +111,7 @@ class AdminAgent {
     });
 
     agentBus.on('assignment.failed', async ({ case_id, payload }) => {
+      this.stats.escalatedCount = (this.stats.escalatedCount || 0) + 1;
       await Escalation.create({
         case_id,
         reason_taxonomy: 'assignment_failed',
@@ -105,22 +168,36 @@ class AdminAgent {
       }
     }
 
-    let attempt = 0;
-    while (attempt <= config.RETRY_COUNT) {
-      try {
-        if (process.env.LLM_API_KEY) {
-          const res = await callLLM(prompt);
-          
-          if (this.circuitBreaker.state === 'half-open') {
-            this.circuitBreaker.state = 'closed';
-            this.circuitBreaker.failures = 0;
-            EventLog.create({ event: 'circuit.state_changed', payload: { from: 'half-open', to: 'closed' } }).catch(console.error);
+    return this.llmLimiter(async () => {
+      let attempt = 0;
+      while (attempt <= config.RETRY_COUNT) {
+        try {
+          if (process.env.LLM_API_KEY) {
+            const start = Date.now();
+            const res = await callLLM(prompt);
+            const latency = Date.now() - start;
+            
+            this.llmLatencyHistory.push(latency);
+            if (this.llmLatencyHistory.length > 10) this.llmLatencyHistory.shift();
+            
+            const avgLatency = this.llmLatencyHistory.reduce((a,b)=>a+b, 0) / this.llmLatencyHistory.length;
+            
+            if (avgLatency > config.LLM_LATENCY_CIRCUIT_BREAKER_MS && this.circuitBreaker.state !== 'open') {
+               this.circuitBreaker.state = 'open';
+               this.circuitBreaker.openUntil = Date.now() + config.CIRCUIT_BREAKER_COOLDOWN_MS;
+               EventLog.create({ event: 'circuit.state_changed', payload: { from: 'closed/half-open', to: 'open', reason: 'high_latency', avgLatency } }).catch(console.error);
+            }
+
+            if (this.circuitBreaker.state === 'half-open') {
+              this.circuitBreaker.state = 'closed';
+              this.circuitBreaker.failures = 0;
+              EventLog.create({ event: 'circuit.state_changed', payload: { from: 'half-open', to: 'closed' } }).catch(console.error);
+            }
+            
+            return { data: res, path: attempt === 0 ? 'llm' : 'llm_retry' };
+          } else {
+            break;
           }
-          
-          return { data: res, path: attempt === 0 ? 'llm' : 'llm_retry' };
-        } else {
-          break;
-        }
       } catch (error) {
         attempt++;
         if (attempt > config.RETRY_COUNT) {
@@ -133,11 +210,12 @@ class AdminAgent {
           console.warn(`[adminAgent] LLM failed after ${config.RETRY_COUNT} retries. Fallback.`);
           break;
         }
-        console.warn(`[adminAgent] LLM error: ${error.message}. Retrying ${attempt}/${config.RETRY_COUNT}...`);
-        await new Promise(resolve => setTimeout(resolve, config.BASE_BACKOFF_MS * Math.pow(2, attempt - 1)));
+          console.warn(`[adminAgent] LLM error: ${error.message}. Retrying ${attempt}/${config.RETRY_COUNT}...`);
+          await new Promise(resolve => setTimeout(resolve, config.BASE_BACKOFF_MS * Math.pow(2, attempt - 1)));
+        }
       }
-    }
-    return { data: null, path: 'fallback' };
+      return { data: null, path: 'fallback' };
+    });
   }
 
   computePriorityScore(urgency, signals) {
@@ -149,27 +227,59 @@ class AdminAgent {
     return score;
   }
 
-  async handleCaseCreated(case_id, payload) {
-    // Stage 1: Extraction
-    const extractionPrompt = `Extract signals from the disaster complaint.
+  async handleCaseCreated(case_id, payload, qDepth) {
+    let bypassLLM = false;
+    if (qDepth > config.QUEUE_GOVERNOR_THRESHOLD) {
+      bypassLLM = true;
+      if (!this._governorActive) {
+        this._governorActive = true;
+        EventLog.create({ event: 'governor.activated', payload: { qDepth, threshold: config.QUEUE_GOVERNOR_THRESHOLD } }).catch(console.error);
+      }
+    } else if (this._governorActive && qDepth < config.QUEUE_GOVERNOR_THRESHOLD / 2) {
+      this._governorActive = false;
+      EventLog.create({ event: 'governor.deactivated', payload: { qDepth } }).catch(console.error);
+    }
+
+    const cacheKey = payload.description ? payload.description.trim().toLowerCase() : null;
+    let cachedResult = null;
+    if (cacheKey && this.llmCache.has(cacheKey)) {
+       const entry = this.llmCache.get(cacheKey);
+       if (Date.now() - entry.time < 5 * 60 * 1000) {
+          cachedResult = entry;
+       } else {
+          this.llmCache.delete(cacheKey);
+       }
+    }
+
+    let extractedSignals, extractionPath;
+
+    if (cachedResult) {
+      extractedSignals = cachedResult.extractedSignals;
+      extractionPath = 'cache';
+    } else {
+      // Stage 1: Extraction
+      const extractionPrompt = `Extract signals from the disaster complaint.
 Description: "${payload.description}"
 Respond ONLY with a JSON object: { "injuries_mentioned": bool, "trapped_or_immobile": bool, "structural_damage": bool, "vulnerable_persons": bool, "resource_type_guess": string[], "severity_keywords": string[] }`;
-    
-    let { data: extractedSignals, path: extractionPath } = await this.callLLMWithRetry(extractionPrompt);
+      
+      let res = bypassLLM ? { data: null, path: 'governor_fallback' } : await this.callLLMWithRetry(extractionPrompt);
+      extractedSignals = res.data ? JSON.parse(res.data) : null;
+      extractionPath = res.path;
 
-    if (extractionPath === 'fallback') {
-      const desc = (payload.description || '').toLowerCase();
-      extractedSignals = {
-        injuries_mentioned: desc.includes('bleed') || desc.includes('injur') || desc.includes('heart') || desc.includes('breath'),
-        trapped_or_immobile: desc.includes('trapped') || desc.includes('drown') || desc.includes('fire'),
-        structural_damage: desc.includes('house') || desc.includes('homeless') || desc.includes('shelter') || desc.includes('fire'),
-        vulnerable_persons: desc.includes('child') || desc.includes('elderly') || desc.includes('baby'),
-        resource_type_guess: [],
-        severity_keywords: []
-      };
-      if (extractedSignals.injuries_mentioned) extractedSignals.resource_type_guess.push('medical');
-      if (extractedSignals.structural_damage) extractedSignals.resource_type_guess.push('shelter');
-      if (extractedSignals.trapped_or_immobile) extractedSignals.resource_type_guess.push('rescue');
+      if (extractionPath.includes('fallback') || !extractedSignals) {
+        const desc = (payload.description || '').toLowerCase();
+        extractedSignals = {
+          injuries_mentioned: desc.includes('bleed') || desc.includes('injur') || desc.includes('heart') || desc.includes('breath'),
+          trapped_or_immobile: desc.includes('trapped') || desc.includes('drown') || desc.includes('fire'),
+          structural_damage: desc.includes('house') || desc.includes('homeless') || desc.includes('shelter') || desc.includes('fire'),
+          vulnerable_persons: desc.includes('child') || desc.includes('elderly') || desc.includes('baby'),
+          resource_type_guess: [],
+          severity_keywords: []
+        };
+        if (extractedSignals.injuries_mentioned) extractedSignals.resource_type_guess.push('medical');
+        if (extractedSignals.structural_damage) extractedSignals.resource_type_guess.push('shelter');
+        if (extractedSignals.trapped_or_immobile) extractedSignals.resource_type_guess.push('rescue');
+      }
     }
 
     // Clustering logic
@@ -244,25 +354,43 @@ Respond ONLY with a JSON object: { "injuries_mentioned": bool, "trapped_or_immob
     await Case.updateOne({ case_id }, { priority_score, incident_id, extracted_signals: extractedSignals, prompt_version: config.PROMPT_VERSION });
 
     // Stage 2: Classification
-    const classificationPrompt = `Classify this disaster complaint based on these signals.
+    let classification, classificationPath;
+    
+    if (cachedResult) {
+      classification = cachedResult.classification;
+      classificationPath = 'cache';
+    } else {
+      const classificationPrompt = `Classify this disaster complaint based on these signals.
 Signals: ${JSON.stringify(extractedSignals)}
 Description: "${payload.description}"
 Urgency: "${payload.urgency}"
 Respond ONLY with a JSON object: { "category": "medical" | "shelter" | "rescue" | "mixed" | "unknown", "confidence": <float 0-1>, "reasoning": "<string>" }`;
 
-    let { data: classification, path: classificationPath } = await this.callLLMWithRetry(classificationPrompt);
+      let res = bypassLLM ? { data: null, path: 'governor_fallback' } : await this.callLLMWithRetry(classificationPrompt);
+      classification = res.data ? JSON.parse(res.data) : null;
+      classificationPath = res.path;
 
-    if (classificationPath === 'fallback') {
-      let category = 'unknown';
-      if (extractedSignals.injuries_mentioned) category = 'medical';
-      else if (extractedSignals.structural_damage) category = 'shelter';
-      else if (extractedSignals.trapped_or_immobile) category = 'rescue';
+      if (classificationPath.includes('fallback') || !classification) {
+        let category = 'unknown';
+        if (extractedSignals.injuries_mentioned) category = 'medical';
+        else if (extractedSignals.structural_damage) category = 'shelter';
+        else if (extractedSignals.trapped_or_immobile) category = 'rescue';
+        
+        classification = {
+          category,
+          confidence: category === 'unknown' ? 0 : 0.8,
+          reasoning: 'Fallback keyword classification based on signals'
+        };
+      }
       
-      classification = {
-        category,
-        confidence: category === 'unknown' ? 0 : 0.8,
-        reasoning: 'Fallback keyword classification based on signals'
-      };
+      // Save to cache
+      if (cacheKey && (extractionPath.includes('llm') || classificationPath.includes('llm'))) {
+        this.llmCache.set(cacheKey, { time: Date.now(), extractedSignals, classification });
+        if (this.llmCache.size > 1000) {
+          const firstKey = this.llmCache.keys().next().value;
+          this.llmCache.delete(firstKey);
+        }
+      }
     }
 
     const finalPath = classificationPath === 'fallback' ? 'fallback' : classificationPath;
@@ -274,7 +402,21 @@ Respond ONLY with a JSON object: { "category": "medical" | "shelter" | "rescue" 
       payload: { path: finalPath, extractedSignals, classification }
     });
 
-    const { category, confidence, reasoning } = classification;
+    const { confidence } = classification;
+    let { category, reasoning } = classification;
+
+    if ((category === 'mixed' || category === 'unknown') && confidence >= config.AUTO_RESOLVE_THRESHOLD) {
+      if (extractedSignals.injuries_mentioned && !extractedSignals.structural_damage) {
+        category = 'medical';
+        reasoning = '[Auto-Resolved from ' + classification.category + '] ' + reasoning;
+        await EventLog.create({ event: 'case.auto_resolved', case_id, payload: { category }});
+      } else if (extractedSignals.structural_damage && !extractedSignals.injuries_mentioned) {
+        category = 'shelter';
+        reasoning = '[Auto-Resolved from ' + classification.category + '] ' + reasoning;
+        await EventLog.create({ event: 'case.auto_resolved', case_id, payload: { category }});
+      }
+    }
+
     await Case.updateOne({ case_id }, { category });
 
     const thresholdDoc = await ClassificationThreshold.findOne({ category });
@@ -282,13 +424,21 @@ Respond ONLY with a JSON object: { "category": "medical" | "shelter" | "rescue" 
 
     if (confidence >= threshold && (category === 'medical' || category === 'shelter')) {
       const target = category === 'medical' ? 'hospital' : 'ngo';
-      this.initiateBidding(case_id, payload, target, priority_score);
+      this.initiateBidding(case_id, payload, target, priority_score, qDepth || 0);
     } else if (category === 'rescue') {
       agentBus.emitEvent('rescue.requested', case_id, { location: payload.location, description: payload.description, priority_score });
     } else {
       let reason_taxonomy = 'unknown_category';
       if (confidence < threshold) reason_taxonomy = 'low_confidence';
       if (category === 'mixed') reason_taxonomy = 'mixed_category';
+      
+      const dbCase = await Case.findOne({ case_id });
+      if (dbCase && dbCase.retries_count < config.MAX_AUTO_RETRIES) {
+        await Case.updateOne({ case_id }, { $inc: { retries_count: 1 } });
+        await EventLog.create({ event: 'case.auto_retry', case_id, payload: { reason: reason_taxonomy, attempt: dbCase.retries_count + 1 }});
+        setTimeout(() => agentBus.emitEvent('case.created', case_id, payload), config.BASE_BACKOFF_MS);
+        return;
+      }
       
       let incidentContext = '';
       if (targetIncident) {
@@ -309,6 +459,7 @@ Keep it short, clear, and actionable.`;
          plain_summary = llmRes.data.trim();
       }
 
+      this.stats.escalatedCount = (this.stats.escalatedCount || 0) + 1;
       await Escalation.create({
         case_id,
         incident_id: targetIncident ? targetIncident.incident_id : undefined,
@@ -323,17 +474,23 @@ Keep it short, clear, and actionable.`;
     }
   }
 
-  async initiateBidding(case_id, payload, target, priority_score) {
+  async initiateBidding(case_id, payload, target, priority_score, qDepth = 0) {
     this.activeBids[case_id] = { bids: [], target };
     agentBus.emitEvent('case.routing_requested', case_id, { ...payload, target, priority_score });
 
     const priorityRatio = Math.min(1, Math.max(0, priority_score / 100));
-    const windowMs = Math.floor(config.BID_WINDOW_MAX_MS - (priorityRatio * (config.BID_WINDOW_MAX_MS - config.BID_WINDOW_MIN_MS)));
+    let windowMs = Math.floor(config.BID_WINDOW_MAX_MS - (priorityRatio * (config.BID_WINDOW_MAX_MS - config.BID_WINDOW_MIN_MS)));
+
+    // Load-aware bidding: shrink window if queue is long
+    if (qDepth > 0) {
+      const loadRatio = Math.min(1, qDepth / config.QUEUE_HARD_CAPACITY);
+      windowMs = Math.max(config.BID_WINDOW_MIN_MS, Math.floor(windowMs * (1 - loadRatio * 0.5)));
+    }
 
     EventLog.create({
       case_id,
       event: 'case.bid_window_started',
-      payload: { windowMs, priority_score }
+      payload: { windowMs, priority_score, qDepth }
     }).catch(console.error);
 
     setTimeout(() => this.finalizeBidding(case_id), windowMs);
@@ -359,6 +516,15 @@ Keep it short, clear, and actionable.`;
         facility_name: winner.facility_name
       });
     } else {
+      const dbCase = await Case.findOne({ case_id });
+      if (dbCase && dbCase.retries_count < config.MAX_AUTO_RETRIES) {
+        await Case.updateOne({ case_id }, { $inc: { retries_count: 1 } });
+        await EventLog.create({ event: 'case.auto_retry', case_id, payload: { reason: 'assignment_failed', target, attempt: dbCase.retries_count + 1 }});
+        const comp = await Complaint.findOne({ case_id }).sort({ created_at: -1 });
+        this.initiateBidding(case_id, { urgency: dbCase.urgency, location: comp.location }, target, dbCase.priority_score, 0);
+        return;
+      }
+
       await Escalation.create({
         case_id,
         reason_taxonomy: 'assignment_failed',

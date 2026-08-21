@@ -1,42 +1,71 @@
 const EventEmitter = require('events');
 const EventLog = require('../models/EventLog');
+const config = require('../config/adminAgentConfig');
 
 class AgentBus extends EventEmitter {
-  async emitEvent(eventName, case_id, payload) {
-    try {
-      // 1. Audit trail
-      await EventLog.create({
-        case_id,
-        event: eventName,
-        payload
-      });
-      console.log(`[agentBus] Emitted: ${eventName} (case: ${case_id})`);
-      
-      // 2. Broadcast to other agents
-      this.emit(eventName, { case_id, payload });
+  constructor() {
+    super();
+    this.io = null;
+    this.logBuffer = [];
+    this.flushInterval = setInterval(() => this.flushLogs(), config.EVENT_LOG_BATCH_INTERVAL_MS || 2000);
+  }
 
-      // 3. Broadcast to frontend via Socket.io if attached
+  setIO(io) {
+    this.io = io;
+  }
+
+  attachIO(io) {
+    this.io = io;
+  }
+
+  async flushLogs() {
+    if (this.logBuffer.length === 0) return;
+    const batch = [...this.logBuffer];
+    this.logBuffer = [];
+    try {
+      const start = Date.now();
+      await EventLog.insertMany(batch);
+      this.lastDbLatency = Date.now() - start;
+    } catch (e) {
+      console.error('[agentBus] Failed to insert EventLog batch:', e);
+    }
+  }
+
+  emitEvent(eventName, caseId, payload) {
+    try {
+      this.emit(eventName, { case_id: caseId, payload });
+      
+      const criticalEvents = ['case.created', 'assignment.confirmed', 'assignment.failed', 'escalation.raised'];
+      
+      if (criticalEvents.includes(eventName)) {
+        EventLog.create({
+          case_id: caseId,
+          event: eventName,
+          payload
+        }).catch(err => console.error('Failed to log event', err));
+      } else {
+        this.logBuffer.push({
+          case_id: caseId,
+          event: eventName,
+          payload,
+          timestamp: new Date()
+        });
+        if (this.logBuffer.length >= (config.EVENT_LOG_BATCH_SIZE || 100)) {
+          this.flushLogs();
+        }
+      }
+
       if (this.io) {
-        if (['incident.severity_raised', 'capacity.risk_raised', 'circuit.state_changed'].includes(eventName)) {
-          this.io.emit('admin-alert', { eventName, payload });
-          this.io.emit('case-update', { case_id, eventName, payload }); // Still send case-update just in case
-        } else if (eventName.startsWith('escalation')) {
-          this.io.emit('escalation-update', { case_id, eventName, payload });
-        } else if (eventName.startsWith('hospital.availability') || eventName.startsWith('ngo.availability')) {
-          this.io.emit('resource-update', { eventName, payload });
+        if (eventName === 'incident.severity_raised' || eventName === 'capacity.risk_raised' || eventName === 'circuit.state_changed') {
+          this.io.emit('admin-alert', { event: eventName, case_id: caseId, payload });
         } else {
-          this.io.emit('case-update', { case_id, eventName, payload });
+          this.io.emit('case-update', { event: eventName, case_id: caseId });
         }
       }
     } catch (error) {
       console.error(`[agentBus] Error emitting event ${eventName}`, error);
     }
   }
-
-  attachIO(io) {
-    this.io = io;
-  }
 }
 
-const agentBus = new AgentBus();
-module.exports = agentBus;
+module.exports = new AgentBus();

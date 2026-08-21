@@ -1,13 +1,18 @@
 const assert = require('assert');
 const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 const adminAgent = require('../agents/adminAgent');
 const config = require('../config/adminAgentConfig');
 const Case = require('../models/Case');
 const Incident = require('../models/Incident');
 
 async function runTests() {
+  console.log('Starting MongoDB Memory Server...');
+  const mongoServer = await MongoMemoryServer.create();
+  const uri = mongoServer.getUri();
+  
   console.log('Running adminAgent unit tests...');
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/disaster-coordination');
+  await mongoose.connect(uri);
   
   // 1. Priority score computation
   const signalsMedical = { injuries_mentioned: true, trapped_or_immobile: false, vulnerable_persons: false, structural_damage: false };
@@ -81,6 +86,8 @@ async function runTests() {
   // 7. Auth middleware verification (just a quick local check of how it would fail)
   const reqMock = { headers: {} };
   const resMock = { status: (c) => ({ json: (d) => ({ code: c, data: d }) }) };
+  const origToken = process.env.ADMIN_TOKEN;
+  process.env.ADMIN_TOKEN = 'secret-test-token';
   const checkAuth = (req, res) => {
     if (req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -88,6 +95,7 @@ async function runTests() {
     return true;
   };
   const result = checkAuth(reqMock, resMock);
+  process.env.ADMIN_TOKEN = origToken;
   assert.strictEqual(result.code, 401);
   console.log('Admin auth tests passed.');
   
@@ -100,15 +108,18 @@ async function runTests() {
   assert.strictEqual(params1.sector_id, '5');
 
   // 8.2 addFeedback
-  await Case.create({ case_id: 'feedback-case' });
+  await Case.create({ case_id: 'feedback-case', sector_id: '1', urgency: 'low' });
   await adminAgent.addFeedback('feedback-case', 'up', 'Good job');
   const fbCase = await Case.findOne({ case_id: 'feedback-case' });
   assert.strictEqual(fbCase.operator_feedback.rating, 'up');
 
   // 8.3 resolveIncidentAll
   const inc2 = await Incident.create({ incident_id: 'inc-v5', sector_id: 'v5_sec', case_ids: ['case-v5-1', 'case-v5-2'] });
-  await Case.create({ case_id: 'case-v5-1' });
-  await Case.create({ case_id: 'case-v5-2' });
+  await Case.create({ case_id: 'case-v5-1', sector_id: 'v5_sec', urgency: 'low' });
+  await Case.create({ case_id: 'case-v5-2', sector_id: 'v5_sec', urgency: 'low' });
+  const Complaint = require('../models/Complaint');
+  await Complaint.create({ case_id: 'case-v5-1', description: 'test', urgency: 'low', location: {lat:0, lng:0}, sector_id: 'v5_sec', caller_ref: '1' });
+  await Complaint.create({ case_id: 'case-v5-2', description: 'test', urgency: 'low', location: {lat:0, lng:0}, sector_id: 'v5_sec', caller_ref: '2' });
   await Escalation.create({ case_id: 'case-v5-1', reason: 'r1', reason_taxonomy: 'manual_flag' });
   await Escalation.create({ case_id: 'case-v5-2', reason: 'r2', reason_taxonomy: 'manual_flag' });
   
@@ -136,13 +147,76 @@ async function runTests() {
   }
   console.log('V5 operator-facing tests passed.');
   
-  // Cleanup
-  await Case.deleteMany({ sector_id: 'test_sector' });
-  await Incident.deleteMany({ sector_id: 'test_sector' });
-  await Case.deleteMany({ case_id: { $in: ['feedback-case', 'case-v5-1', 'case-v5-2'] } });
-  await Incident.deleteMany({ incident_id: 'inc-v5' });
-  await Escalation.deleteMany({ case_id: { $in: ['case-v5-1', 'case-v5-2'] } });
+  // 9. V6 Scale & Automation Tests
+  console.log('Running V6 scale & automation tests...');
+  
+  const dummyPayload = { description: 'test queue description with no keywords', urgency: 'low', location: { lat: 0, lng: 0 } };
+  
+  // 9.1 Queue Capacity Shedding
+  let origHardCap = config.QUEUE_HARD_CAPACITY;
+  config.QUEUE_HARD_CAPACITY = 0; // force shed
+  await Case.create({ case_id: 'shed-case', status: 'intake', description: 'test', urgency: 'low', sector_id: '1', location: { lat:0, lng:0 } });
+  
+  await new Promise(r => {
+    // using internal bus for test
+    const agentBus = require('../services/agentBus');
+    agentBus.emit('case.created', { case_id: 'shed-case', payload: dummyPayload });
+    setTimeout(r, 100);
+  });
+  
+  const shedCase = await Case.findOne({ case_id: 'shed-case' });
+  assert.strictEqual(shedCase.status, 'deferred', 'Should shed case when queue is full');
+  config.QUEUE_HARD_CAPACITY = origHardCap;
+  
+  // 9.2 Load governor fallback
+  let origGov = config.QUEUE_GOVERNOR_THRESHOLD;
+  config.QUEUE_GOVERNOR_THRESHOLD = 0; // force governor
+  await Case.create({ case_id: 'gov-case', status: 'intake', description: 'test', urgency: 'low', sector_id: '1', location: { lat:0, lng:0 } });
+  
+  let llmCalled = false;
+  const originalCallLLM = adminAgent.callLLMWithRetry.bind(adminAgent);
+  adminAgent.callLLMWithRetry = async (prompt) => {
+    llmCalled = true;
+    return { data: null, path: 'mocked' };
+  };
+  
+  await adminAgent.handleCaseCreated('gov-case', dummyPayload, 10);
+  assert.strictEqual(llmCalled, false, 'Governor should bypass LLM completely');
+  const govCase = await Case.findOne({ case_id: 'gov-case' });
+  assert.strictEqual(govCase.category, 'unknown', 'Governor should use fallback classification');
+  config.QUEUE_GOVERNOR_THRESHOLD = origGov;
+  
+  // 9.3 Description Caching
+  adminAgent.llmCache.clear();
+  adminAgent.callLLMWithRetry = originalCallLLM; // Restore to actually run
+  
+  // Create first case to populate cache (must be LLM path to cache it)
+  adminAgent.callLLMWithRetry = async (prompt) => {
+    if (prompt.includes('Extract signals')) return { data: JSON.stringify({ injuries_mentioned: true }), path: 'llm' };
+    return { data: JSON.stringify({ category: 'medical', confidence: 0.9, reasoning: 'test' }), path: 'llm' };
+  };
+  await Case.create({ case_id: 'cache-case-1', status: 'intake', description: 'identical desc', urgency: 'low', sector_id: '1', location: { lat:0, lng:0 } });
+  await adminAgent.handleCaseCreated('cache-case-1', { description: 'identical desc', urgency: 'low', location: { lat:0, lng:0 } }, 0);
+  assert.strictEqual(adminAgent.llmCache.size > 0, true, 'Cache should have an entry');
+  
+  // Second case should hit cache
+  let cacheHitCalled = false;
+  adminAgent.callLLMWithRetry = async () => { cacheHitCalled = true; throw new Error('LLM should not be called on cache hit') };
+  await Case.create({ case_id: 'cache-case-2', status: 'intake', description: 'identical desc', urgency: 'high', sector_id: '1', location: { lat:0, lng:0 } });
+  await adminAgent.handleCaseCreated('cache-case-2', { description: 'identical desc', urgency: 'high', location: { lat:0, lng:0 } }, 0);
+  assert.strictEqual(cacheHitCalled, false, 'Should have used cached classification');
+  
+  adminAgent.callLLMWithRetry = originalCallLLM;
+  console.log('V6 tests passed.');
 
+  // Cleanup
+  await Case.deleteMany({});
+  await Incident.deleteMany({});
+  await Escalation.deleteMany({});
+
+  await mongoose.disconnect();
+  await mongoServer.stop();
+  
   console.log('All unit tests passed successfully!');
   process.exit(0);
 }
