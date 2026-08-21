@@ -11,7 +11,13 @@ const complaintSchema = new mongoose.Schema({
     lng: { type: Number, required: true }
   },
   source_command_center: { type: String },
-  status: { type: String, enum: ['open', 'closed'], default: 'open' },
+  status: { type: String, enum: ['open', 'closed', 'flagged_for_review'], default: 'open' },
+  triage_score: { type: Number, min: 1, max: 5 },
+  triage_source: { type: String, enum: ['llm', 'heuristic'] },
+  original_language: { type: String, default: 'en' },
+  original_text: { type: String },
+  duplicate_check_method: { type: String, enum: ['llm', 'heuristic'] },
+  quality_flag: { type: String, enum: ['ok', 'flagged_for_review'], default: 'ok' },
   created_at: { type: Date, default: Date.now }
 });
 
