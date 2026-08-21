@@ -17,7 +17,10 @@ class AgentBus extends EventEmitter {
 
       // 3. Broadcast to frontend via Socket.io if attached
       if (this.io) {
-        if (eventName.startsWith('escalation')) {
+        if (['incident.severity_raised', 'capacity.risk_raised', 'circuit.state_changed'].includes(eventName)) {
+          this.io.emit('admin-alert', { eventName, payload });
+          this.io.emit('case-update', { case_id, eventName, payload }); // Still send case-update just in case
+        } else if (eventName.startsWith('escalation')) {
           this.io.emit('escalation-update', { case_id, eventName, payload });
         } else if (eventName.startsWith('hospital.availability') || eventName.startsWith('ngo.availability')) {
           this.io.emit('resource-update', { eventName, payload });
