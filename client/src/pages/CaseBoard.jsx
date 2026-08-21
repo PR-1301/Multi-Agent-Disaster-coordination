@@ -3,20 +3,43 @@ import socket from '../socket';
 
 export default function CaseBoard() {
   const [cases, setCases] = useState([]);
+  const [query, setQuery] = useState('');
+  const [mySector, setMySector] = useState('');
+  const [activeFilters, setActiveFilters] = useState({});
 
-  useEffect(() => {
-    fetch('http://localhost:5000/api/cases')
+  const fetchCases = (filters = activeFilters) => {
+    const params = new URLSearchParams(filters);
+    if (mySector) params.append('sector_id', mySector);
+    
+    fetch(`http://localhost:5000/api/cases?${params.toString()}`)
       .then(res => res.json())
       .then(data => setCases(data));
+  };
 
-    socket.on('case-update', () => {
-      fetch('http://localhost:5000/api/cases')
-        .then(res => res.json())
-        .then(data => setCases(data));
-    });
-
+  useEffect(() => {
+    fetchCases();
+    socket.on('case-update', () => fetchCases());
     return () => socket.off('case-update');
-  }, []);
+  }, [activeFilters, mySector]);
+
+  const handleQuerySubmit = async (e) => {
+    e.preventDefault();
+    if (!query) {
+      setActiveFilters({});
+      return;
+    }
+    try {
+      const res = await fetch('http://localhost:5000/api/admin/parse-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
+      setActiveFilters(data.filterParams || {});
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const getStatusColor = (status) => {
     const colors = {
@@ -42,9 +65,40 @@ export default function CaseBoard() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h2 className="text-3xl font-bold tracking-tight">Active Cases</h2>
-        <p className="text-gray-400 mt-1">Real-time overview of all disaster coordination cases.</p>
+      <header className="flex justify-between items-start">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Active Cases</h2>
+          <p className="text-gray-400 mt-1">Real-time overview of all disaster coordination cases.</p>
+        </div>
+        
+        <div className="flex gap-4 items-center">
+          <div className="flex flex-col items-end">
+            <label className="text-xs text-gray-500 mb-1">My Sector Pin</label>
+            <input 
+              type="text" 
+              placeholder="e.g. 4" 
+              value={mySector}
+              onChange={(e) => setMySector(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm w-24 focus:outline-none focus:border-blue-500 text-white"
+            />
+          </div>
+          
+          <form onSubmit={handleQuerySubmit} className="flex flex-col items-end">
+            <label className="text-xs text-gray-500 mb-1">Ask adminAgent (Filter)</label>
+            <div className="flex">
+              <input 
+                type="text" 
+                placeholder="e.g. show critical cases" 
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-l-lg px-4 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-500 text-white"
+              />
+              <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-r-lg text-sm font-medium transition-colors">
+                Apply
+              </button>
+            </div>
+          </form>
+        </div>
       </header>
 
       <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
@@ -81,6 +135,34 @@ export default function CaseBoard() {
                     <td className="px-6 py-4 text-gray-300 capitalize">{c.assigned_facility_type || '-'}</td>
                     <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
                       {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <button 
+                        onClick={() => {
+                          fetch(`http://localhost:5000/api/cases/${c.case_id}/feedback`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ rating: 'up' })
+                          });
+                        }} 
+                        className="text-gray-500 hover:text-green-400 mr-2 transition-colors"
+                        title="Good Classification"
+                      >
+                        👍
+                      </button>
+                      <button 
+                        onClick={() => {
+                          fetch(`http://localhost:5000/api/cases/${c.case_id}/feedback`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ rating: 'down' })
+                          });
+                        }} 
+                        className="text-gray-500 hover:text-red-400 transition-colors"
+                        title="Bad Classification"
+                      >
+                        👎
+                      </button>
                     </td>
                   </tr>
                 ))
