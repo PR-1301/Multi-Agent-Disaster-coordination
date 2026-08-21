@@ -2,6 +2,7 @@ const Ngo = require('../models/Ngo');
 const Case = require('../models/Case');
 const agentBus = require('../services/agentBus');
 const { getDistance } = require('../services/geo');
+const ngoLLMClient = require('../services/ngoLLMClient');
 
 class NgoAgent {
   constructor() {
@@ -183,7 +184,28 @@ class NgoAgent {
 
       // --- 5. Rank Candidates Deterministically ---
       const rankedCandidates = this.rankCandidates(candidates, location, resourceType, quantity);
-      console.log(`[ngoAgent] Found ${rankedCandidates.length} eligible NGO candidate(s) for case ${case_id}. Top candidate: ${rankedCandidates[0].ngo.name}`);
+      console.log(`[ngoAgent] Found ${rankedCandidates.length} eligible NGO candidate(s) for case ${case_id}. Top deterministic candidate: ${rankedCandidates[0].ngo.name}`);
+
+      // --- 5b. LLM Hybrid Decision Engine ---
+      const caseDetails = {
+        urgency: payload.urgency || (existingCase && existingCase.urgency),
+        category: payload.category || (existingCase && existingCase.category),
+        description: payload.description || (existingCase && existingCase.description)
+      };
+      
+      const llmRecommendation = await ngoLLMClient.evaluateNgoCandidates(caseDetails, rankedCandidates.slice(0, 5));
+      if (llmRecommendation && llmRecommendation.recommended_facility_id) {
+        const recommendedId = llmRecommendation.recommended_facility_id.toString();
+        const foundIndex = rankedCandidates.findIndex(c => c.ngo._id.toString() === recommendedId);
+        if (foundIndex !== -1) {
+          console.log(`[ngoAgent] LLM Recommended facility ${recommendedId}. Shifting to top priority.`);
+          const recommendedCandidate = rankedCandidates.splice(foundIndex, 1)[0];
+          recommendedCandidate.explanation = `[LLM Selected: ${llmRecommendation.reasoning}] | ${recommendedCandidate.explanation}`;
+          rankedCandidates.unshift(recommendedCandidate);
+        } else {
+          console.warn(`[ngoAgent] LLM recommended an invalid or unlisted facility (${recommendedId}). Ignoring.`);
+        }
+      }
 
       // --- 6. Concurrency-Safe Atomic Allocation ---
       let allocatedNgo = null;

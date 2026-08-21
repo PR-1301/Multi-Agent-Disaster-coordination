@@ -8,7 +8,7 @@ const ngoAgent = require('../agents/ngoAgent');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/disaster-coordination';
 
-function waitForEvent(eventName, timeoutMs = 5000) {
+function waitForEvent(eventName, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Timeout waiting for event "${eventName}" after ${timeoutMs}ms`));
