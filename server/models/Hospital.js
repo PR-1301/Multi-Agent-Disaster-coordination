@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const hospitalSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  sector_id: { type: String, default: 'sector_central' },
   location: {
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }
