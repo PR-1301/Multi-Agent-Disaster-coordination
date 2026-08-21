@@ -30,7 +30,9 @@ app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/hospitals', require('./routes/hospitals'));
 app.use('/api/ngos', require('./routes/ngos'));
 app.use('/api/cases', require('./routes/cases'));
+app.use('/api/incidents', require('./routes/incidents'));
 app.use('/api/escalations', require('./routes/escalations'));
+app.use('/api/admin', require('./routes/admin'));
 
 // Socket.io
 io.on('connection', (socket) => {
