@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "mock-bidders": "node dev/mockBidder.js"
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [],
   "author": "",
