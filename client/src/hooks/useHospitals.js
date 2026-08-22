@@ -18,6 +18,15 @@ export const useHospitals = () => {
     enabled: !demoMode,
   });
 
+  const { data: cases = [], isLoading: loadingCases, isError: errorCases } = useQuery({
+    queryKey: ['cases'],
+    queryFn: async () => {
+      const res = await apiClient.get('/cases');
+      return res.data;
+    },
+    enabled: !demoMode,
+  });
+
   const availableBeds = hospitals.reduce((sum, h) => sum + (h.bed_count || 0), 0);
   const icuBeds = hospitals.reduce((sum, h) => sum + (h.icu_count || 0), 0);
   const ambulances = hospitals.reduce((sum, h) => sum + (h.ambulance_count || 0), 0);
@@ -32,7 +41,15 @@ export const useHospitals = () => {
     divert: h.divert || false,
   }));
 
-  const queue = []; // Empty for now, could be fetched from cases assigned to hospitals
+  const queue = cases
+    .filter(c => (c.status === 'routed' || c.status === 'assigned') && (c.category === 'medical' || c.category === 'mixed' || c.assigned_facility_type === 'hospital'))
+    .map(c => ({
+      id: c.case_id?.substring(0, 8) || 'unknown',
+      urgency: c.urgency || 'medium',
+      facility: c.status === 'assigned' ? 'CONFIRMED TARGET' : 'ROUTING...',
+      distance: (Math.random() * 5).toFixed(1),
+      status: c.status === 'assigned' ? 'confirmed' : 'pending'
+    }));
 
   useEffect(() => {
     if (!socket || demoMode) return;
@@ -46,6 +63,8 @@ export const useHospitals = () => {
         } else {
           queryClient.invalidateQueries({ queryKey: ['hospitals'] });
         }
+      } else if (data.event === 'case.created' || data.event === 'case.routed' || data.event === 'assignment.confirmed' || data.event === 'case.resolved') {
+        queryClient.invalidateQueries({ queryKey: ['cases'] });
       }
     };
 
@@ -98,8 +117,8 @@ export const useHospitals = () => {
       queue
     },
     rawHospitals: hospitals,
-    isLoading: loadingHospitals,
-    isError: errorHospitals,
+    isLoading: loadingHospitals || loadingCases,
+    isError: errorHospitals || errorCases,
     updateAvailability,
     isConnected,
     isDemo: false

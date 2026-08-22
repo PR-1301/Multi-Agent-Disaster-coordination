@@ -81,9 +81,7 @@ class ComplaintAgent {
     console.log(`[complaint-agent] language_normalize lang: ${langRes.original_language}, method: ${langRes.method}`);
     const processedText = langRes.english_description;
 
-    // 3. Stage 3: Structured extraction (if unstructured / messy)
-    const structRes = await extractStructuredComplaint(processedText);
-    console.log(`[complaint-agent] structured_extraction keywords: [${structRes.keywords.join(', ')}], method: ${structRes.method}`);
+    // 3. Stage 3: Structured extraction (will be run in parallel)
 
     // 4. Stage 4: Duplicate detection (Spatial-Temporal pre-filter + Semantic check)
     const recentCases = await Case.find({
@@ -107,15 +105,18 @@ class ComplaintAgent {
       }
     }
 
-    const dupRes = await detectSemanticDuplicate(processedText, candidateComplaints);
+    const [structRes, dupRes, triageRes] = await Promise.all([
+      extractStructuredComplaint(processedText),
+      detectSemanticDuplicate(processedText, candidateComplaints),
+      assessUrgency(processedText, urgency)
+    ]);
+    
+    console.log(`[complaint-agent] structured_extraction keywords: [${structRes.keywords.join(', ')}], method: ${structRes.method}`);
     console.log(`[complaint-agent] duplicate_check is_duplicate: ${dupRes.is_duplicate}, method: ${dupRes.method}, matched_case: ${dupRes.matched_case_id || 'none'}`);
+    console.log(`[complaint-agent] urgency_triage triage_score: ${triageRes.triage_score}, source: ${triageRes.triage_source}`);
 
     const duplicateCaseId = dupRes.is_duplicate ? dupRes.matched_case_id : null;
     const case_id = duplicateCaseId || crypto.randomUUID();
-
-    // 5. Stage 5: Urgency re-scoring / triage assessment
-    const triageRes = await assessUrgency(processedText, urgency);
-    console.log(`[complaint-agent] urgency_triage triage_score: ${triageRes.triage_score}, source: ${triageRes.triage_source}`);
 
     // Create Case document if new
     if (!duplicateCaseId) {

@@ -44,16 +44,17 @@ Output STRICT JSON matching exactly this format (do not include markdown blocks,
     
     if (provider === 'nvidia') {
       const baseURL = process.env.NGO_LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
-      openai = new OpenAI({ apiKey, baseURL });
+      openai = new OpenAI({ apiKey, baseURL, timeout: 5000 });
       model = process.env.NGO_LLM_MODEL || 'meta/llama-3.1-70b-instruct';
     } else if (provider === 'gemini') {
       openai = new OpenAI({
         apiKey: apiKey,
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        timeout: 5000
       });
       model = 'gemini-1.5-flash';
     } else {
-      openai = new OpenAI({ apiKey: apiKey });
+      openai = new OpenAI({ apiKey: apiKey, timeout: 5000 });
       model = 'gpt-4o-mini';
     }
 

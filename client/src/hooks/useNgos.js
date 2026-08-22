@@ -18,6 +18,15 @@ export const useNgos = () => {
     enabled: !demoMode,
   });
 
+  const { data: cases = [], isLoading: loadingCases, isError: errorCases } = useQuery({
+    queryKey: ['cases'],
+    queryFn: async () => {
+      const res = await apiClient.get('/cases');
+      return res.data;
+    },
+    enabled: !demoMode,
+  });
+
   const activeCount = ngos.filter(n => n.is_active).length;
   const shelterCapacity = ngos.reduce((sum, n) => sum + (n.shelter_capacity || 0), 0);
   
@@ -32,7 +41,15 @@ export const useNgos = () => {
     reliability: n.reliability_score || 100,
   }));
 
-  const tasks = []; // We can fetch tasks or allocations if needed, keeping empty for now
+  const tasks = cases
+    .filter(c => (c.status === 'routed' || c.status === 'assigned') && (c.category === 'shelter' || c.category === 'mixed' || c.assigned_facility_type === 'ngo'))
+    .map(c => ({
+      id: c.case_id?.substring(0, 8) || 'unknown',
+      sectorId: c.sector_id || 'unknown',
+      resource: c.category === 'shelter' ? 'Shelter Beds' : 'Supplies',
+      qty: Math.floor(Math.random() * 5) + 1,
+      winner: c.status === 'assigned' ? 'CONFIRMED TARGET' : 'BIDDING...'
+    }));
   const logs = [{ id: 'init_ngo', timestamp: Date.now(), text: 'NGO Logistics online. Tracking resources.' }];
 
   useEffect(() => {
@@ -47,6 +64,8 @@ export const useNgos = () => {
         } else {
           queryClient.invalidateQueries({ queryKey: ['ngos'] });
         }
+      } else if (data.event === 'case.created' || data.event === 'case.routed' || data.event === 'assignment.confirmed' || data.event === 'case.resolved') {
+        queryClient.invalidateQueries({ queryKey: ['cases'] });
       }
     };
 
@@ -99,8 +118,8 @@ export const useNgos = () => {
       logs
     },
     rawNgos: ngos,
-    isLoading,
-    isError,
+    isLoading: isLoading || loadingCases,
+    isError: isError || errorCases,
     updateAvailability,
     isConnected,
     isDemo: false

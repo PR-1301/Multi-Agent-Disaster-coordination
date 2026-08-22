@@ -265,7 +265,7 @@ const HospitalAgent = () => {
       </div>
 
       {/* Bottom Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
         <HudPanel title="Live Counters (Target)" color={THEME.primary} className="md:col-span-2 min-h-[90px] p-2 flex flex-col">
           <div className="flex flex-col h-full gap-2 px-2">
             <select 
@@ -303,6 +303,32 @@ const HospitalAgent = () => {
                <AlertCircle size={15} /> {selectedHospital?.divert ? 'CLEAR DIVERT' : 'TRIGGER NETWORK DIVERT'}
              </button>
            </div>
+        </HudPanel>
+        <HudPanel title="Admit / Fulfill Case" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
+           <form 
+             className="flex items-center gap-2 h-full w-full"
+             onSubmit={async (e) => {
+               e.preventDefault();
+               const caseId = e.target.caseId.value;
+               if (!caseId || !selectedHospitalId) return;
+               try {
+                 const apiClient = require('../api/client').default;
+                 await apiClient.post(`/cases/${caseId}/fulfill`, {
+                   action_summary: `Patient admitted to ${selectedHospital?.name}`
+                 });
+                 // Deduct a bed
+                 handleBedUpdate('WARD', 'Admit');
+                 e.target.reset();
+               } catch (err) {
+                 console.error(err);
+               }
+             }}
+           >
+             <input name="caseId" type="text" placeholder="CASE ID..." required className="bg-black border border-[#00e5ff]/40 px-2 py-2 flex-1 min-w-0 text-[#00e5ff] placeholder-[#00e5ff]/40 outline-none rounded text-xs uppercase" />
+             <button type="submit" className="px-2 py-2 bg-[#00e5ff]/20 border border-[#00e5ff] text-[#00e5ff] font-bold flex items-center gap-1.5 hover:bg-[#00e5ff] hover:text-black transition-all shrink-0 rounded cursor-pointer uppercase">
+               <CheckCircle2 size={14} /> ADMIT
+             </button>
+           </form>
         </HudPanel>
       </div>
     </div>

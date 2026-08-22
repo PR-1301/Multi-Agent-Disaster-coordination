@@ -91,23 +91,15 @@ class AdminAgent {
     });
 
     agentBus.on('assignment.confirmed', async ({ case_id, payload }) => {
-      const c = await Case.findOne({ case_id });
-      if (c) {
-        const e2e = Date.now() - c.created_at.getTime();
-        this.stats.totalE2ELatency = (this.stats.totalE2ELatency || 0) + e2e;
-        this.stats.resolvedCount = (this.stats.resolvedCount || 0) + 1;
-      }
-      
       await Case.updateOne(
         { case_id },
         { 
-          status: 'resolved', 
-          resolved_at: new Date(),
+          status: 'assigned', 
           assigned_facility_id: payload.facility_id,
           assigned_facility_type: payload.facility_type
         }
       );
-      agentBus.emitEvent('case.resolved', case_id, payload);
+      agentBus.emitEvent('case.assigned', case_id, payload);
     });
 
     agentBus.on('assignment.failed', async ({ case_id, payload }) => {
@@ -475,25 +467,8 @@ Keep it short, clear, and actionable.`;
   }
 
   async initiateBidding(case_id, payload, target, priority_score, qDepth = 0) {
-    this.activeBids[case_id] = { bids: [], target };
-    agentBus.emitEvent('case.routing_requested', case_id, { ...payload, target, priority_score });
-
-    const priorityRatio = Math.min(1, Math.max(0, priority_score / 100));
-    let windowMs = Math.floor(config.BID_WINDOW_MAX_MS - (priorityRatio * (config.BID_WINDOW_MAX_MS - config.BID_WINDOW_MIN_MS)));
-
-    // Load-aware bidding: shrink window if queue is long
-    if (qDepth > 0) {
-      const loadRatio = Math.min(1, qDepth / config.QUEUE_HARD_CAPACITY);
-      windowMs = Math.max(config.BID_WINDOW_MIN_MS, Math.floor(windowMs * (1 - loadRatio * 0.5)));
-    }
-
-    EventLog.create({
-      case_id,
-      event: 'case.bid_window_started',
-      payload: { windowMs, priority_score, qDepth }
-    }).catch(console.error);
-
-    setTimeout(() => this.finalizeBidding(case_id), windowMs);
+    await Case.updateOne({ case_id }, { status: 'routed' });
+    agentBus.emitEvent('case.routed', case_id, { ...payload, target, priority_score });
   }
 
   async finalizeBidding(case_id) {

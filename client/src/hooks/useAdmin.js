@@ -39,11 +39,11 @@ export const useAdmin = () => {
 
   // Calculate Kanban
   const kanban = {
-    intake: cases.filter(c => c.status === 'intake').map(c => c.case_id.substring(0, 8)),
-    routed: cases.filter(c => c.status === 'routed').map(c => c.case_id.substring(0, 8)),
-    assigned: cases.filter(c => c.status === 'assigned').map(c => c.case_id.substring(0, 8)),
-    resolved: cases.filter(c => c.status === 'resolved' || c.status === 'closed').map(c => c.case_id.substring(0, 8)),
-    escalated: cases.filter(c => c.status === 'escalated').map(c => c.case_id.substring(0, 8)),
+    intake: cases.filter(c => c.status === 'intake').map(c => c.case_id?.substring(0, 8) || 'unknown'),
+    routed: cases.filter(c => c.status === 'routed').map(c => c.case_id?.substring(0, 8) || 'unknown'),
+    assigned: cases.filter(c => c.status === 'assigned').map(c => c.case_id?.substring(0, 8) || 'unknown'),
+    resolved: cases.filter(c => c.status === 'resolved' || c.status === 'closed').map(c => c.case_id?.substring(0, 8) || 'unknown'),
+    escalated: cases.filter(c => c.status === 'escalated').map(c => c.case_id?.substring(0, 8) || 'unknown'),
   };
 
   const health = healthData?.circuitBreaker?.state === 'OPEN' ? 'CRITICAL' : (healthData?.queueDepth > 10 ? 'DEGRADED' : 'HEALTHY');

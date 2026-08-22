@@ -292,45 +292,56 @@ const NeuralCore = () => {
 // -------------------------------------------------------------
 // 5. KANBAN AS SIGNAL PATHS
 // -------------------------------------------------------------
-const KanbanBoard = ({ kanban }) => {
+const KanbanBoard = ({ kanban, selectedCase, setSelectedCase }) => {
   const cols = [
-    { id: 'intake', title: 'INTAKE', items: kanban.intake },
-    { id: 'routed', title: 'ROUTED', items: kanban.routed },
-    { id: 'assigned', title: 'ASSIGNED', items: kanban.assigned },
-    { id: 'escalated', title: 'ESCALATED', items: kanban.escalated }
+    { id: 'intake', title: 'INTAKE', items: kanban.intake, stage: 'Received' },
+    { id: 'routed', title: 'ROUTED', items: kanban.routed, stage: 'Routed' },
+    { id: 'assigned', title: 'ASSIGNED', items: kanban.assigned, stage: 'In Progress' },
+    { id: 'escalated', title: 'ESCALATED', items: kanban.escalated, stage: 'Reviewed' }
   ];
 
   return (
-    <div className="flex h-full gap-8 relative items-start pb-4">
-      {cols.map((col, idx) => (
-        <div key={col.id} className="flex-1 flex flex-col min-w-[100px] z-10 min-h-0 h-full">
-          <div className="text-[9px] font-mono tracking-widest text-[#00ff88] border-b border-[#00ff88]/30 pb-1 mb-3">
-             <ScanlineValue value={col.title} delay={1.5 + (idx*0.2)} /> [{col.items.length}]
+    <div className="flex flex-col h-full gap-4 relative pb-4">
+      <div className="flex h-1/2 gap-8 relative items-start">
+        {cols.map((col, idx) => (
+          <div key={col.id} className="flex-1 flex flex-col min-w-[100px] z-10 min-h-0 h-full">
+            <div className="text-[9px] font-mono tracking-widest text-[#00ff88] border-b border-[#00ff88]/30 pb-1 mb-3">
+               <ScanlineValue value={col.title} delay={1.5 + (idx*0.2)} /> [{col.items.length}]
+            </div>
+            <div className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1 no-scrollbar">
+              {col.items.map((item, i) => (
+                <motion.div 
+                  key={item}
+                  onClick={() => setSelectedCase({ id: item, stage: col.stage })}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, delay: 2 + (i*0.1) }}
+                  className={`border p-1.5 text-[9px] font-mono flex justify-between cursor-pointer transition-colors ${selectedCase?.id === item ? 'border-white text-white bg-white/20' : 'border-[#00ff88]/20 bg-black/40 text-[#00e5ff] hover:bg-[#00ff88]/20 hover:text-white'}`}
+                >
+                  <span>C-{item}</span>
+                  <span className="opacity-50">S12</span>
+                </motion.div>
+              ))}
+            </div>
           </div>
-          {/* Using CSS class to hide scrollbar for sleek HUD feel */}
-          <div className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1 no-scrollbar">
-            {col.items.map((item, i) => (
-              <motion.div 
-                key={item}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 2 + (i*0.1) }}
-                className="border border-[#00ff88]/20 bg-black/40 p-1.5 text-[9px] font-mono text-[#00e5ff] flex justify-between"
-              >
-                <span>C-{item}</span>
-                <span className="opacity-50">S12</span>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      ))}
+        ))}
 
-      {/* Signal Paths Between Columns */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" preserveAspectRatio="none">
-         <line x1="25%" y1="20" x2="33%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
-         <line x1="50%" y1="20" x2="58%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
-         <line x1="75%" y1="20" x2="83%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
-      </svg>
+        {/* Signal Paths Between Columns */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" preserveAspectRatio="none">
+           <line x1="25%" y1="20" x2="33%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
+           <line x1="50%" y1="20" x2="58%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
+           <line x1="75%" y1="20" x2="83%" y2="20" stroke={THEME.primary} strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 4" />
+        </svg>
+      </div>
+
+      {/* Case Journey Tracker */}
+      <div className="flex-1 border-t border-[#00ff88]/20 pt-4 flex flex-col justify-center">
+        {selectedCase ? (
+          <CaseJourneyTracker currentStage={selectedCase.stage} className="max-w-xl mx-auto" />
+        ) : (
+          <div className="text-center text-xs font-mono text-gray-500 uppercase tracking-widest mt-8">Select a case to view tracking journey</div>
+        )}
+      </div>
     </div>
   );
 };
@@ -340,16 +351,37 @@ const KanbanBoard = ({ kanban }) => {
 // MAIN PAGE COMPONENT
 // -------------------------------------------------------------
 import { useAdmin } from '../hooks/useAdmin';
+import CaseJourneyTracker from '../components/CaseJourneyTracker';
+import { useSocket } from '../contexts/SocketContext';
 
 const AdminAgent = () => {
   const { data, isLoading, isError, resolveEscalation, dismissEscalation, isConnected, isDemo } = useAdmin();
+  const { socket } = useSocket();
   const { health = 'HEALTHY', kanban = { intake: [], routed: [], assigned: [], escalated: [] }, escalations = [], logs = [] } = data || {};
   const [time, setTime] = useState(new Date().toLocaleTimeString());
+  const [selectedCase, setSelectedCase] = useState(null);
+  const [signal, setSignal] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!socket || isDemo) return;
+    
+    const handleUpdate = (data) => {
+      if (data.event === 'case.routed') {
+        const target = data.payload.target === 'ngoAgent' ? 'NGO_BRK' : 'HOS_BRK';
+        // Trigger a visual signal animation toward the breaker
+        setSignal({ id: Date.now(), target });
+        setTimeout(() => setSignal(null), 2000);
+      }
+    };
+    
+    socket.on('case-update', handleUpdate);
+    return () => socket.off('case-update', handleUpdate);
+  }, [socket, isDemo]);
 
   if (isLoading) {
     return (
@@ -405,8 +437,19 @@ const AdminAgent = () => {
           </RevealPanel>
 
           {/* Kanban Signal Paths */}
-          <RevealPanel title="Global Case Signal Flow" className="flex-1 min-h-0" delay={0.4}>
-             <KanbanBoard kanban={kanban} />
+          <RevealPanel title="Global Case Signal Flow" className="flex-1 min-h-0 relative" delay={0.4}>
+             <KanbanBoard kanban={kanban} selectedCase={selectedCase} setSelectedCase={setSelectedCase} />
+             {signal && (
+               <motion.div 
+                 key={signal.id}
+                 className="absolute z-50 pointer-events-none"
+                 initial={{ opacity: 1, x: '20%', y: '50%', scale: 0.5 }}
+                 animate={{ opacity: 0, x: '100%', y: signal.target === 'NGO_BRK' ? '10%' : '90%', scale: 2 }}
+                 transition={{ duration: 1.5, ease: "easeOut" }}
+               >
+                 <div className="w-16 h-[2px] bg-[#00ff88] shadow-[0_0_15px_#00ff88]" />
+               </motion.div>
+             )}
           </RevealPanel>
         </div>
 
@@ -414,11 +457,11 @@ const AdminAgent = () => {
         <div className="col-span-4 flex flex-col gap-4 min-h-0">
           
           {/* Top Right: Breakers & Gauges */}
-          <RevealPanel title="Telemetry & Safeguards" className="flex-none h-32" delay={0.6}>
+          <RevealPanel title="Telemetry & Safeguards" className="flex-none h-32 relative" delay={0.6}>
              <div className="flex h-full items-center justify-around">
                <ConcentricRing value={98} label="CACHE" delay={0.8} />
-               <ConcentricRing value={100} isBreaker={true} label="NGO_BRK" color={THEME.primary} delay={0.9} />
-               <ConcentricRing value={60} isBreaker={true} label="HOS_BRK" color={THEME.critical} delay={1.0} />
+               <ConcentricRing value={100} isBreaker={true} label="NGO_BRK" color={signal?.target === 'NGO_BRK' ? '#00e5ff' : THEME.primary} delay={0.9} />
+               <ConcentricRing value={60} isBreaker={true} label="HOS_BRK" color={signal?.target === 'HOS_BRK' ? '#00e5ff' : THEME.critical} delay={1.0} />
              </div>
           </RevealPanel>
 

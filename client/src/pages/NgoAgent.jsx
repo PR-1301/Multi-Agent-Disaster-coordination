@@ -251,13 +251,35 @@ const NgoAgent = () => {
              </button>
            </div>
         </HudPanel>
-        <HudPanel title="Manual Dispatch" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
-           <div className="flex items-center gap-2 h-full w-full">
-             <input type="text" placeholder="SELECT NGO..." className="bg-black border border-[#ffc107]/40 px-3 py-2 flex-1 min-w-0 text-[#ffc107] placeholder-[#ffc107]/40 outline-none rounded text-xs" />
-             <button className="px-3 py-2 bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107] font-bold flex items-center gap-1.5 hover:bg-[#ffc107] hover:text-black transition-all shrink-0 rounded cursor-pointer">
-               <Navigation2 size={14} /> SEND
+        
+        <HudPanel title="Dispatch & Fulfill Case" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
+           <form 
+             className="flex items-center gap-2 h-full w-full"
+             onSubmit={async (e) => {
+               e.preventDefault();
+               const caseId = e.target.caseId.value;
+               if (!caseId || !selectedNgoId) return;
+               try {
+                 const apiClient = require('../api/client').default;
+                 await apiClient.post(`/cases/${caseId}/fulfill`, {
+                   action_summary: `Dispatched resources from ${selectedNgo?.name}`
+                 });
+                 // Deduct some stock automatically
+                 updateAvailability.mutate({
+                   id: selectedNgoId,
+                   updates: { food_units: Math.max(0, (selectedNgo.food_units || 0) - 10) }
+                 });
+                 e.target.reset();
+               } catch (err) {
+                 console.error(err);
+               }
+             }}
+           >
+             <input name="caseId" type="text" placeholder="CASE ID (e.g. C-...)" required className="bg-black border border-[#ffc107]/40 px-3 py-2 flex-1 min-w-0 text-[#ffc107] placeholder-[#ffc107]/40 outline-none rounded text-xs uppercase" />
+             <button type="submit" className="px-3 py-2 bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107] font-bold flex items-center gap-1.5 hover:bg-[#ffc107] hover:text-black transition-all shrink-0 rounded cursor-pointer uppercase">
+               <Navigation2 size={14} /> FULFILL
              </button>
-           </div>
+           </form>
         </HudPanel>
       </div>
     </div>
