@@ -147,37 +147,91 @@ const ConcentricRing = ({ value = 100, max = 100, size = 60, color = THEME.prima
 };
 
 // -------------------------------------------------------------
-// 1. THE NEURAL CORE
+// 1. THE VIRTUAL BRAIN NEURAL CORE (MASSIVE SCALE)
 // -------------------------------------------------------------
 const NeuralCore = () => {
-  const svgRef = useRef(null);
   const [pulses, setPulses] = useState([]);
+  const [computeData, setComputeData] = useState([]);
+  const requestCount = useRef(0);
+  const [displayCount, setDisplayCount] = useState(0);
 
-  // Hardcoded exact geometry for Jarvis feel
-  const nodes = [
-    { id: 0, x: 50, y: 150 }, { id: 1, x: 120, y: 80 }, { id: 2, x: 140, y: 220 },
-    { id: 3, x: 220, y: 140 }, { id: 4, x: 280, y: 60 }, { id: 5, x: 300, y: 240 },
-    { id: 6, x: 380, y: 150 }, { id: 7, x: 440, y: 90 }, { id: 8, x: 460, y: 200 }
-  ];
-  const edges = [
-    [0,1], [0,2], [1,3], [2,3], [3,4], [3,5], [4,6], [5,6], [6,7], [6,8]
-  ];
-
-  useEffect(() => {
-    // Fire a precise light pulse randomly every 2-4 seconds
-    const interval = setInterval(() => {
-      const edge = edges[Math.floor(Math.random() * edges.length)];
-      const n1 = nodes[edge[0]];
-      const n2 = nodes[edge[1]];
-      const id = Date.now();
-      setPulses(p => [...p.slice(-4), { id, x1: n1.x, y1: n1.y, x2: n2.x, y2: n2.y }]);
-    }, 2500);
-    return () => clearInterval(interval);
+  // Generate a dense, screen-filling brain network (1200x600 scale)
+  const nodes = React.useMemo(() => {
+    const arr = [];
+    // Central core hubs (centered at x=600, y=300)
+    for(let i=0; i<10; i++) {
+       arr.push({ id: `hub-${i}`, x: 600 + (Math.random()*200-100), y: 300 + (Math.random()*120-60), r: 6, type: 'hub' });
+    }
+    // Cortex perimeter (left and right lobes)
+    for(let i=0; i<80; i++) {
+       const isLeft = Math.random() > 0.5;
+       const cx = isLeft ? 350 : 850; // Spread wide left and right
+       const angle = Math.random() * Math.PI * 2;
+       const radius = 100 + Math.random() * 250;
+       arr.push({ 
+         id: `node-${i}`, 
+         x: cx + Math.cos(angle) * radius, 
+         y: 300 + Math.sin(angle) * (radius * 0.9), 
+         r: 2.5, 
+         type: 'synapse' 
+       });
+    }
+    return arr;
   }, []);
 
+  const edges = React.useMemo(() => {
+    const arr = [];
+    // Connect hubs to hubs
+    for(let i=0; i<10; i++) {
+       for(let j=i+1; j<10; j++) arr.push([i, j]);
+    }
+    // Connect synapses to hubs and nearby synapses
+    for(let i=10; i<nodes.length; i++) {
+       arr.push([i, Math.floor(Math.random()*10)]);
+       arr.push([i, 10 + Math.floor(Math.random()*(nodes.length-10))]);
+       arr.push([i, 10 + Math.floor(Math.random()*(nodes.length-10))]);
+    }
+    return arr;
+  }, [nodes]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Spawn massive pulse waves
+      const newPulses = Array.from({ length: 8 }).map(() => {
+         const edge = edges[Math.floor(Math.random() * edges.length)];
+         const n1 = nodes[edge[0]];
+         const n2 = nodes[edge[1]];
+         return { id: Math.random().toString(), x1: n1.x, y1: n1.y, x2: n2.x, y2: n2.y };
+      });
+      
+      setPulses(curr => [...curr.slice(-60), ...newPulses]);
+      
+      requestCount.current += Math.floor(Math.random() * 1500) + 500;
+      setDisplayCount(requestCount.current);
+
+      if (Math.random() > 0.3) {
+        setComputeData(curr => [...curr.slice(-8), {
+          id: Math.random().toString(),
+          x: Math.random() * 1100 + 50,
+          y: Math.random() * 500 + 50,
+          text: `0x${Math.floor(Math.random()*16777215).toString(16).toUpperCase()}`
+        }]);
+      }
+    }, 50); 
+
+    return () => clearInterval(interval);
+  }, [edges, nodes]);
+
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-[radial-gradient(ellipse_at_center,rgba(0,229,255,0.05)_0%,transparent_70%)]">
-      <svg viewBox="0 0 500 300" className="w-full h-full max-h-[300px]" ref={svgRef}>
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_center,rgba(0,229,255,0.05)_0%,transparent_80%)]">
+      <div className="absolute top-4 left-4 z-10 flex flex-col pointer-events-none">
+         <span className="text-[9px] font-mono text-[#00e5ff] tracking-widest opacity-80 mb-1">VIRTUAL NEURAL CORE // LIVE COMPUTE</span>
+         <span className="text-2xl font-mono text-white tracking-tighter" style={{ textShadow: '0 0 12px rgba(0,229,255,0.5)' }}>
+            {displayCount.toLocaleString()}<span className="text-[#00ff88] text-xs tracking-widest ml-2">OPS/s</span>
+         </span>
+      </div>
+
+      <svg viewBox="0 0 1200 600" className="w-full h-full z-0">
         <defs>
           <radialGradient id="nodeGlow">
             <stop offset="0%" stopColor={THEME.secondary} stopOpacity="1"/>
@@ -185,38 +239,50 @@ const NeuralCore = () => {
           </radialGradient>
         </defs>
 
-        {/* Edges */}
+        <AnimatePresence>
+          {computeData.map(d => (
+            <motion.text
+              key={d.id}
+              x={d.x} y={d.y}
+              fill={THEME.secondary}
+              fontSize="16"
+              fontFamily="monospace"
+              fontWeight="bold"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: [0, 0.8, 0], y: -50 }}
+              transition={{ duration: 1.5, ease: "linear" }}
+            >
+              {d.text}
+            </motion.text>
+          ))}
+        </AnimatePresence>
+
         {edges.map((e, i) => (
-          <line key={i} x1={nodes[e[0]].x} y1={nodes[e[0]].y} x2={nodes[e[1]].x} y2={nodes[e[1]].y} stroke={THEME.primary} strokeWidth="0.5" strokeOpacity="0.2" />
+          <line key={i} x1={nodes[e[0]].x} y1={nodes[e[0]].y} x2={nodes[e[1]].x} y2={nodes[e[1]].y} stroke={THEME.primary} strokeWidth="0.6" strokeOpacity="0.4" />
         ))}
 
-        {/* Nodes */}
         {nodes.map(n => (
           <g key={n.id}>
-             <circle cx={n.x} cy={n.y} r={12} fill="none" stroke={THEME.primary} strokeWidth="0.5" strokeOpacity="0.3" />
-             <circle cx={n.x} cy={n.y} r={2} fill={THEME.primary} />
+             <circle cx={n.x} cy={n.y} r={n.r * 2.5} fill="none" stroke={n.type === 'hub' ? THEME.secondary : THEME.primary} strokeWidth="1.5" strokeOpacity="0.6" />
+             <circle cx={n.x} cy={n.y} r={n.r} fill={n.type === 'hub' ? THEME.secondary : THEME.primary} />
           </g>
         ))}
 
-        {/* Traveling Pulses */}
-        <AnimatePresence>
-          {pulses.map(p => (
-            <motion.circle
-              key={p.id}
-              r={3}
-              fill={THEME.secondary}
-              style={{ filter: `drop-shadow(0 0 6px ${THEME.secondary})` }}
-              initial={{ cx: p.x1, cy: p.y1, opacity: 0 }}
-              animate={{ cx: p.x2, cy: p.y2, opacity: [0, 1, 1, 0] }}
-              transition={{ duration: 0.8, ease: "linear" }}
-              onAnimationComplete={() => setPulses(curr => curr.filter(x => x.id !== p.id))}
-            />
-          ))}
-        </AnimatePresence>
+        {pulses.map(p => (
+          <motion.circle
+            key={p.id}
+            r={3.5}
+            fill={THEME.secondary}
+            style={{ filter: `drop-shadow(0 0 10px ${THEME.secondary})` }}
+            initial={{ cx: p.x1, cy: p.y1, opacity: 0 }}
+            animate={{ cx: p.x2, cy: p.y2, opacity: [0, 1, 1, 0] }}
+            transition={{ duration: 0.2 + Math.random()*0.3, ease: "linear" }}
+          />
+        ))}
         
-        {/* Decorative Concentric Scanning Ring */}
-        <motion.g animate={{ rotate: -360 }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }} style={{ originX: "250px", originY: "150px" }}>
-           <circle cx="250" cy="150" r="140" fill="none" stroke={THEME.primary} strokeWidth="0.5" strokeOpacity="0.1" strokeDasharray="2 10" />
+        <motion.g animate={{ rotate: 360 }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }} style={{ originX: "600px", originY: "300px" }}>
+           <circle cx="600" cy="300" r="240" fill="none" stroke={THEME.secondary} strokeWidth="1.5" strokeOpacity="0.15" strokeDasharray="6 24" />
+           <circle cx="600" cy="300" r="280" fill="none" stroke={THEME.primary} strokeWidth="2" strokeOpacity="0.08" strokeDasharray="3 12" />
         </motion.g>
       </svg>
     </div>
@@ -241,7 +307,8 @@ const KanbanBoard = ({ kanban }) => {
           <div className="text-[9px] font-mono tracking-widest text-[#00ff88] border-b border-[#00ff88]/30 pb-1 mb-3">
              <ScanlineValue value={col.title} delay={1.5 + (idx*0.2)} /> [{col.items.length}]
           </div>
-          <div className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1 scrollbar-thin">
+          {/* Using CSS class to hide scrollbar for sleek HUD feel */}
+          <div className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1 no-scrollbar">
             {col.items.map((item, i) => (
               <motion.div 
                 key={item}
@@ -272,14 +339,34 @@ const KanbanBoard = ({ kanban }) => {
 // -------------------------------------------------------------
 // MAIN PAGE COMPONENT
 // -------------------------------------------------------------
-const AdminAgent = ({ data }) => {
-  const { health, kanban, escalations, logs } = data;
+import { useAdmin } from '../hooks/useAdmin';
+
+const AdminAgent = () => {
+  const { data, isLoading, isError, resolveEscalation, dismissEscalation, isConnected, isDemo } = useAdmin();
+  const { health = 'HEALTHY', kanban = { intake: [], routed: [], assigned: [], escalated: [] }, escalations = [], logs = [] } = data || {};
   const [time, setTime] = useState(new Date().toLocaleTimeString());
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#00ff88] font-mono">
+        <Network size={48} className="animate-pulse opacity-50" />
+        <div className="text-xl tracking-[0.2em] animate-pulse">CONNECTING TO NEXUS...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#ff1744] font-mono">
+        <div className="text-xl tracking-[0.2em] font-bold">NEXUS CONNECTION LOST</div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col gap-4 text-[#e0fce9]" style={{ '--tw-text-opacity': 1 }}>
@@ -313,7 +400,7 @@ const AdminAgent = ({ data }) => {
         <div className="col-span-8 flex flex-col gap-4 min-h-0">
           
           {/* Neural Core */}
-          <RevealPanel title="Agent Network Topology" className="flex-none h-64" delay={0.2}>
+          <RevealPanel title="Agent Network Topology" className="flex-[3] min-h-0" delay={0.2}>
              <NeuralCore />
           </RevealPanel>
 
@@ -321,7 +408,6 @@ const AdminAgent = ({ data }) => {
           <RevealPanel title="Global Case Signal Flow" className="flex-1 min-h-0" delay={0.4}>
              <KanbanBoard kanban={kanban} />
           </RevealPanel>
-
         </div>
 
         {/* Right: Escalations & Telemetry */}
@@ -338,33 +424,47 @@ const AdminAgent = ({ data }) => {
 
           {/* Holographic Escalation Queue */}
           <RevealPanel title="Human-in-Loop Queue" className="flex-1 min-h-0" delay={0.8}>
-            <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
+            <div className="flex flex-col gap-4 h-full overflow-y-auto pr-1 no-scrollbar">
               <AnimatePresence>
                 {escalations.map((esc, idx) => (
                   <motion.div 
                     key={esc.id}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: 1.2 + (idx * 0.1) }}
-                    className="p-2 border border-[#00e5ff]/20 bg-[linear-gradient(90deg,rgba(0,229,255,0.05)_0%,transparent_100%)] font-mono text-[10px]"
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3, delay: 1 + (idx*0.2) }}
+                    className="border border-[#00e5ff]/30 bg-black/40 p-4 relative group flex-1 flex flex-col justify-center min-h-[120px]"
                   >
-                    <div className="flex justify-between items-center mb-2 border-b border-[#00e5ff]/10 pb-1">
-                      <span className="text-[#00e5ff] tracking-widest">{esc.id}</span>
-                      <span className="text-[#ffc107] opacity-80 uppercase">{esc.reason}</span>
-                    </div>
-                    
-                    <div className="text-gray-400 mb-2 leading-tight">
-                      <ScanlineValue value={`REASON: ${esc.summary}`} delay={1.5 + (idx * 0.1)} />
-                      <div className="mt-1 opacity-50">PROMPT: {esc.promptVersion}</div>
-                    </div>
-
-                    <div className="flex gap-4">
-                      <button className="text-[#00ff88] hover:text-white transition-colors flex items-center gap-1">
-                        <CheckSquare size={10} /> RESOLVE
-                      </button>
-                      <button className="text-gray-500 hover:text-white transition-colors flex items-center gap-1">
-                        <XSquare size={10} /> DISMISS
-                      </button>
+                    <div className="absolute top-0 left-0 w-1 h-full bg-[#00e5ff]/50" />
+                    <div className="pl-3 flex flex-col gap-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-mono text-[#00e5ff] font-bold tracking-wider">{esc.id}</span>
+                        <span className="text-[10px] font-mono tracking-widest font-bold uppercase" style={{ color: esc.reason === 'MIXED_CATEGORY' ? THEME.critical : THEME.warning }}>
+                          {esc.reason}
+                        </span>
+                      </div>
+                      <div className="text-sm text-[#e0fce9] font-mono leading-relaxed">
+                        <ScanlineValue value={`REASON: ${esc.summary}`} delay={1.5 + (idx * 0.1)} />
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-500 mb-2">
+                        PROMPT: {esc.promptVersion}
+                      </div>
+                      <div className="flex gap-5 text-xs font-mono mt-1">
+                        <button 
+                           onClick={() => resolveEscalation.mutate({ id: esc.id, decision: 'retry' })}
+                           disabled={resolveEscalation.isPending}
+                           className="text-[#00ff88] hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <CheckSquare size={14}/> RESOLVE
+                        </button>
+                        <button 
+                           onClick={() => dismissEscalation.mutate({ id: esc.id })}
+                           disabled={dismissEscalation.isPending}
+                           className="text-gray-500 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <XSquare size={14}/> DISMISS
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 ))}

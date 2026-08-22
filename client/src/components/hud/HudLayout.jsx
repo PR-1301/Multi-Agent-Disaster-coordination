@@ -1,7 +1,8 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { ShieldAlert, Users, PlusSquare, Network } from 'lucide-react';
+import { ShieldAlert, Users, PlusSquare, Network, Power } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useSocket } from '../../contexts/SocketContext';
 
 const AGENTS = [
   { path: '/complaint', name: 'SIGNAL', icon: ShieldAlert, color: '#ff1744', desc: 'Intake & Triage' },
@@ -12,6 +13,7 @@ const AGENTS = [
 
 const HudLayout = ({ children }) => {
   const location = useLocation();
+  const { demoMode, setDemoMode } = useSocket();
 
   return (
     <div className="relative min-h-screen bg-[#080808] text-gray-200 flex flex-col font-sans">
@@ -66,6 +68,16 @@ const HudLayout = ({ children }) => {
               </NavLink>
             );
           })}
+          
+          <div className="ml-2 pl-2 border-l border-gray-800 flex items-center">
+            <button
+              onClick={() => setDemoMode(!demoMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded transition-all text-xs font-mono font-bold tracking-wider ${demoMode ? 'bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107]' : 'bg-black border border-gray-700 text-gray-500 hover:text-gray-300'}`}
+            >
+              <Power size={14} className={demoMode ? 'animate-pulse' : ''} />
+              {demoMode ? 'DEMO ACTIVE' : 'LIVE'}
+            </button>
+          </div>
         </nav>
       </header>
 

@@ -59,7 +59,7 @@ class AgentBus extends EventEmitter {
         if (eventName === 'incident.severity_raised' || eventName === 'capacity.risk_raised' || eventName === 'circuit.state_changed') {
           this.io.emit('admin-alert', { event: eventName, case_id: caseId, payload });
         } else {
-          this.io.emit('case-update', { event: eventName, case_id: caseId });
+          this.io.emit('case-update', { event: eventName, case_id: caseId, payload });
         }
       }
     } catch (error) {
