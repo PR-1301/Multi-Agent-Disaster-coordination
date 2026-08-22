@@ -119,4 +119,39 @@ router.post('/:id/feedback', async (req, res) => {
   }
 });
 
+// POST /api/cases/:id/fulfill - Mark a case as fulfilled/resolved by NGO or Hospital
+router.post('/:id/fulfill', async (req, res) => {
+  try {
+    const case_id = req.params.id;
+    const { action_summary } = req.body;
+    
+    const c = await Case.findOne({ case_id });
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    
+    // Update case status and resolution summary
+    await Case.updateOne({ case_id }, { 
+      status: 'resolved', 
+      resolved_at: new Date(),
+      resolution_summary: action_summary
+    });
+    
+    // Create an event log
+    const EventLog = require('../models/EventLog');
+    await EventLog.create({
+      case_id,
+      event: 'case.resolved',
+      payload: { reason: 'fulfilled', action_summary }
+    });
+    
+    // Emit global event
+    const agentBus = require('../services/agentBus');
+    agentBus.emitEvent('case.resolved', case_id, { action_summary });
+    
+    res.json({ success: true, case_id });
+  } catch (error) {
+    console.error('Error fulfilling case:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

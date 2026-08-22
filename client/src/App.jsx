@@ -5,22 +5,27 @@ import ComplaintAgent from './pages/ComplaintAgent';
 import NgoAgent from './pages/NgoAgent';
 import HospitalAgent from './pages/HospitalAgent';
 import AdminAgent from './pages/AdminAgent';
-import { useMockData } from './hooks/useMockData';
+import PublicIntake from './pages/PublicIntake';
 
 function App() {
-  const { complaints, ngos, hospitals, admin, addTestComplaint } = useMockData();
-
   return (
     <Router>
-      <HudLayout>
-        <Routes>
-          <Route path="/" element={<Navigate to="/complaint" replace />} />
-          <Route path="/complaint" element={<ComplaintAgent data={complaints} onAddComplaint={addTestComplaint} />} />
-          <Route path="/ngo" element={<NgoAgent data={ngos} />} />
-          <Route path="/hospital" element={<HospitalAgent data={hospitals} />} />
-          <Route path="/admin" element={<AdminAgent data={admin} />} />
-        </Routes>
-      </HudLayout>
+      <Routes>
+        <Route path="/public-intake" element={<PublicIntake />} />
+        
+        {/* Wrap HUD agents in HUD layout */}
+        <Route path="/*" element={
+          <HudLayout>
+            <Routes>
+              <Route path="/" element={<Navigate to="/complaint" replace />} />
+              <Route path="/complaint" element={<ComplaintAgent />} />
+              <Route path="/ngo" element={<NgoAgent />} />
+              <Route path="/hospital" element={<HospitalAgent />} />
+              <Route path="/admin" element={<AdminAgent />} />
+            </Routes>
+          </HudLayout>
+        } />
+      </Routes>
     </Router>
   );
 }

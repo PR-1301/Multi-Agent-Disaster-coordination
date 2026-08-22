@@ -34,14 +34,68 @@ const SaturationGradient = ({ percentage }) => {
   );
 };
 
-const HospitalAgent = ({ data }) => {
-  const { availableBeds, icuBeds, ambulances, facilities, queue } = data;
+import { useHospitals } from '../hooks/useHospitals';
+
+const HospitalAgent = () => {
+  const { data, rawHospitals, isLoading, isError, updateAvailability, isConnected, isDemo } = useHospitals();
+  const { availableBeds = 0, icuBeds = 0, ambulances = 0, facilities = [], queue = [] } = data || {};
+  const [selectedHospitalId, setSelectedHospitalId] = useState('');
   const [time, setTime] = useState(new Date().toLocaleTimeString());
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (rawHospitals && rawHospitals.length > 0 && !selectedHospitalId) {
+      setSelectedHospitalId(rawHospitals[0]._id);
+    }
+  }, [rawHospitals, selectedHospitalId]);
+
+  const handleBedUpdate = (type, action) => {
+    if (!selectedHospitalId) return;
+    const hospital = rawHospitals.find(h => h._id === selectedHospitalId);
+    if (!hospital) return;
+
+    const updates = {};
+    if (type === 'WARD') {
+      const current = hospital.bed_count || 0;
+      updates.bed_count = action === 'Admit' ? Math.max(0, current - 1) : current + 1;
+    } else if (type === 'ICU') {
+      const current = hospital.icu_count || 0;
+      updates.icu_count = action === 'Admit' ? Math.max(0, current - 1) : current + 1;
+    }
+
+    updateAvailability.mutate({ id: selectedHospitalId, updates });
+  };
+
+  const handleDivertToggle = () => {
+    if (!selectedHospitalId) return;
+    const hospital = rawHospitals.find(h => h._id === selectedHospitalId);
+    if (!hospital) return;
+
+    updateAvailability.mutate({ id: selectedHospitalId, updates: { divert: !hospital.divert } });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#00e5ff] font-mono">
+        <PlusSquare size={48} className="animate-pulse opacity-50" />
+        <div className="text-xl tracking-[0.2em] animate-pulse">ESTABLISHING LINK...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#ff0000] font-mono">
+        <div className="text-xl tracking-[0.2em] font-bold">MEDICAL UPLINK FAILED</div>
+      </div>
+    );
+  }
+
+  const selectedHospital = rawHospitals?.find(h => h._id === selectedHospitalId);
 
   return (
     <div className="h-full flex flex-col gap-4 text-[#e0f7fa]" style={{ '--tw-text-opacity': 1 }}>
@@ -50,9 +104,11 @@ const HospitalAgent = ({ data }) => {
         <div className="flex items-center gap-3">
           <PlusSquare size={24} color={THEME.primary} />
           <h1 className="text-xl sm:text-2xl font-bold tracking-widest text-[#00e5ff]">TRIAGE // MEDICAL COMMAND</h1>
-          <div className="flex items-center gap-2 px-3 py-1 bg-[#00e5ff]/10 border border-[#00e5ff]/30 rounded-full">
-             <div className="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse" />
-             <span className="text-xs font-mono text-[#00e5ff]">LIVE</span>
+          <div className={`flex items-center gap-2 px-3 py-1 border rounded-full ${isConnected ? 'bg-[#00e5ff]/10 border-[#00e5ff]/30' : 'bg-gray-800/80 border-gray-600'}`}>
+             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#00e5ff] animate-pulse' : 'bg-gray-400'}`} />
+             <span className={`text-xs font-mono ${isConnected ? 'text-[#00e5ff]' : 'text-gray-400'}`}>
+               {isDemo ? 'DEMO MODE' : (isConnected ? 'LIVE' : 'RECONNECTING...')}
+             </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 sm:gap-6">
@@ -209,22 +265,70 @@ const HospitalAgent = ({ data }) => {
       </div>
 
       {/* Bottom Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
-        <HudPanel title="Live Counters" color={THEME.primary} className="md:col-span-2 min-h-[90px] p-2">
-           <div className="flex flex-wrap gap-2 h-full items-center justify-start sm:justify-around px-2">
-             {['Admit WARD', 'Discharge WARD', 'Admit ICU', 'Discharge ICU'].map(action => (
-               <button key={action} className="px-3 py-1.5 bg-black border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 transition-all flex items-center gap-1.5 rounded cursor-pointer text-xs shrink-0 font-medium">
-                 <Activity size={13} /> {action}
-               </button>
-             ))}
-           </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
+        <HudPanel title="Live Counters (Target)" color={THEME.primary} className="md:col-span-2 min-h-[90px] p-2 flex flex-col">
+          <div className="flex flex-col h-full gap-2 px-2">
+            <select 
+              value={selectedHospitalId} 
+              onChange={e => setSelectedHospitalId(e.target.value)}
+              className="bg-black border border-[#00e5ff]/40 text-[#00e5ff] px-2 py-1 outline-none text-[10px] w-full max-w-xs"
+            >
+              {rawHospitals?.map(h => <option key={h._id} value={h._id}>{h.name}</option>)}
+            </select>
+            <div className="flex flex-wrap gap-2 items-center justify-start sm:justify-around flex-1">
+              {[
+                { label: 'Admit WARD', type: 'WARD', action: 'Admit' },
+                { label: 'Discharge WARD', type: 'WARD', action: 'Discharge' },
+                { label: 'Admit ICU', type: 'ICU', action: 'Admit' },
+                { label: 'Discharge ICU', type: 'ICU', action: 'Discharge' }
+              ].map(btn => (
+                <button 
+                  key={btn.label} 
+                  onClick={() => handleBedUpdate(btn.type, btn.action)}
+                  className="px-3 py-1.5 bg-black border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 transition-all flex items-center gap-1.5 rounded cursor-pointer text-xs shrink-0 font-medium"
+                >
+                  <Activity size={13} /> {btn.label}
+                </button>
+              ))}
+            </div>
+            {updateAvailability.isError && <div className="text-red-500 text-[9px] text-center">UPDATE FAILED</div>}
+          </div>
         </HudPanel>
         <HudPanel title="Emergency Control" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
            <div className="flex h-full items-center justify-center">
-             <button className="px-4 py-2 bg-[#ff1744]/20 border border-[#ff1744] text-[#ff1744] font-bold tracking-wider hover:bg-[#ff1744] hover:text-white transition-all flex items-center gap-2 rounded cursor-pointer text-xs">
-               <AlertCircle size={15} /> TRIGGER NETWORK DIVERT
+             <button 
+               onClick={handleDivertToggle}
+               className={`px-4 py-2 border font-bold tracking-wider transition-all flex items-center gap-2 rounded cursor-pointer text-xs ${selectedHospital?.divert ? 'bg-[#ff1744] text-white border-[#ff1744]' : 'bg-[#ff1744]/20 border-[#ff1744] text-[#ff1744] hover:bg-[#ff1744] hover:text-white'}`}
+             >
+               <AlertCircle size={15} /> {selectedHospital?.divert ? 'CLEAR DIVERT' : 'TRIGGER NETWORK DIVERT'}
              </button>
            </div>
+        </HudPanel>
+        <HudPanel title="Admit / Fulfill Case" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
+           <form 
+             className="flex items-center gap-2 h-full w-full"
+             onSubmit={async (e) => {
+               e.preventDefault();
+               const caseId = e.target.caseId.value;
+               if (!caseId || !selectedHospitalId) return;
+               try {
+                 const apiClient = require('../api/client').default;
+                 await apiClient.post(`/cases/${caseId}/fulfill`, {
+                   action_summary: `Patient admitted to ${selectedHospital?.name}`
+                 });
+                 // Deduct a bed
+                 handleBedUpdate('WARD', 'Admit');
+                 e.target.reset();
+               } catch (err) {
+                 console.error(err);
+               }
+             }}
+           >
+             <input name="caseId" type="text" placeholder="CASE ID..." required className="bg-black border border-[#00e5ff]/40 px-2 py-2 flex-1 min-w-0 text-[#00e5ff] placeholder-[#00e5ff]/40 outline-none rounded text-xs uppercase" />
+             <button type="submit" className="px-2 py-2 bg-[#00e5ff]/20 border border-[#00e5ff] text-[#00e5ff] font-bold flex items-center gap-1.5 hover:bg-[#00e5ff] hover:text-black transition-all shrink-0 rounded cursor-pointer uppercase">
+               <CheckCircle2 size={14} /> ADMIT
+             </button>
+           </form>
         </HudPanel>
       </div>
     </div>

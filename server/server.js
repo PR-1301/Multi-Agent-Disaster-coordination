@@ -33,6 +33,7 @@ app.use('/api/cases', require('./routes/cases'));
 app.use('/api/incidents', require('./routes/incidents'));
 app.use('/api/escalations', require('./routes/escalations'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/public', require('./routes/public'));
 
 // Socket.io
 io.on('connection', (socket) => {

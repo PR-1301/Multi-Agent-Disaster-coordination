@@ -24,14 +24,61 @@ const CapacityBar = ({ value, max, color }) => (
   </div>
 );
 
-const NgoAgent = ({ data }) => {
-  const { activeCount, shelterCapacity, inventory, tasks, logs } = data;
+import { useNgos } from '../hooks/useNgos';
+
+const NgoAgent = () => {
+  const { data, rawNgos, isLoading, isError, updateAvailability, isConnected, isDemo } = useNgos();
+  const { activeCount = 0, shelterCapacity = 0, inventory = [], tasks = [], logs = [] } = data || {};
+  const [selectedNgoId, setSelectedNgoId] = useState('');
   const [time, setTime] = useState(new Date().toLocaleTimeString());
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (rawNgos && rawNgos.length > 0 && !selectedNgoId) {
+      setSelectedNgoId(rawNgos[0]._id);
+    }
+  }, [rawNgos, selectedNgoId]);
+
+  const handleStockUpdate = (resourceType) => {
+    if (!selectedNgoId) return;
+    const ngo = rawNgos.find(n => n._id === selectedNgoId);
+    if (!ngo) return;
+
+    const updates = {};
+    if (resourceType === 'Food') updates.food_units = (ngo.food_units || 0) + 50;
+    if (resourceType === 'Shelter') updates.shelter_capacity = (ngo.shelter_capacity || 0) + 10;
+    if (resourceType === 'Supply') updates.supply_units = (ngo.supply_units || 0) + 20;
+
+    updateAvailability.mutate({ id: selectedNgoId, updates });
+  };
+
+  const handleStatusToggle = (isActive) => {
+    if (!selectedNgoId) return;
+    updateAvailability.mutate({ id: selectedNgoId, updates: { is_active: isActive } });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#ffc107] font-mono">
+        <Users size={48} className="animate-pulse opacity-50" />
+        <div className="text-xl tracking-[0.2em] animate-pulse">SYNCING LOGISTICS...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[#ff0000] font-mono">
+        <div className="text-xl tracking-[0.2em] font-bold">LOGISTICS UPLINK FAILED</div>
+      </div>
+    );
+  }
+
+  const selectedNgo = rawNgos?.find(n => n._id === selectedNgoId);
 
   return (
     <div className="h-full flex flex-col gap-4 text-[#fff8e1]" style={{ '--tw-text-opacity': 1 }}>
@@ -40,9 +87,11 @@ const NgoAgent = ({ data }) => {
         <div className="flex items-center gap-3">
           <Users size={24} color={THEME.primary} />
           <h1 className="text-xl sm:text-2xl font-bold tracking-widest text-[#ffc107]">RELIEF // NGO LOGISTICS</h1>
-          <div className="flex items-center gap-2 px-3 py-1 bg-[#ffc107]/10 border border-[#ffc107]/30 rounded-full">
-             <div className="w-2 h-2 rounded-full bg-[#ffc107] animate-pulse" />
-             <span className="text-xs font-mono text-[#ffc107]">LIVE</span>
+          <div className={`flex items-center gap-2 px-3 py-1 border rounded-full ${isConnected ? 'bg-[#ffc107]/10 border-[#ffc107]/30' : 'bg-gray-800/80 border-gray-600'}`}>
+             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#ffc107] animate-pulse' : 'bg-gray-400'}`} />
+             <span className={`text-xs font-mono ${isConnected ? 'text-[#ffc107]' : 'text-gray-400'}`}>
+               {isDemo ? 'DEMO MODE' : (isConnected ? 'LIVE' : 'RECONNECTING...')}
+             </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 sm:gap-6">
@@ -166,29 +215,71 @@ const NgoAgent = ({ data }) => {
 
       {/* Bottom Controls */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
-        <HudPanel title="Stock Update" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
-          <div className="flex gap-2 h-full items-center justify-around">
-            {['Food', 'Shelter', 'Supply'].map(res => (
-              <div key={res} className="flex flex-col items-center cursor-pointer hover:text-[#ffc107] transition-colors p-1">
-                <Package size={20} className="mb-1 text-[#ffc107]" />
-                <span className="font-semibold">{res}</span>
-              </div>
-            ))}
+        <HudPanel title="Stock Update (Target)" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
+          <div className="flex flex-col h-full gap-1">
+            <select 
+              value={selectedNgoId} 
+              onChange={e => setSelectedNgoId(e.target.value)}
+              className="bg-black border border-[#ffc107]/40 text-[#ffc107] px-2 py-1 outline-none text-[10px]"
+            >
+              {rawNgos?.map(n => <option key={n._id} value={n._id}>{n.name}</option>)}
+            </select>
+            <div className="flex gap-2 h-full items-center justify-around flex-1 mt-1">
+              {['Food', 'Shelter', 'Supply'].map(res => (
+                <div key={res} onClick={() => handleStockUpdate(res)} className="flex flex-col items-center cursor-pointer hover:text-[#ffc107] transition-colors p-1">
+                  <Package size={20} className="mb-1 text-[#ffc107]" />
+                  <span className="font-semibold">{res}</span>
+                </div>
+              ))}
+            </div>
+            {updateAvailability.isError && <div className="text-red-500 text-[9px] text-center">UPDATE FAILED</div>}
           </div>
         </HudPanel>
         <HudPanel title="NGO Status" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
            <div className="flex h-full items-center justify-center gap-3">
-             <button className="px-4 py-2 bg-black border border-gray-600 hover:border-[#ffc107] text-gray-400 hover:text-[#ffc107] transition-all rounded cursor-pointer font-bold">STANDBY</button>
-             <button className="px-4 py-2 bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107] font-bold rounded cursor-pointer">ACTIVE</button>
-           </div>
-        </HudPanel>
-        <HudPanel title="Manual Dispatch" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
-           <div className="flex items-center gap-2 h-full w-full">
-             <input type="text" placeholder="SELECT NGO..." className="bg-black border border-[#ffc107]/40 px-3 py-2 flex-1 min-w-0 text-[#ffc107] placeholder-[#ffc107]/40 outline-none rounded text-xs" />
-             <button className="px-3 py-2 bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107] font-bold flex items-center gap-1.5 hover:bg-[#ffc107] hover:text-black transition-all shrink-0 rounded cursor-pointer">
-               <Navigation2 size={14} /> SEND
+             <button 
+                onClick={() => handleStatusToggle(false)}
+                className={`px-4 py-2 border transition-all rounded cursor-pointer font-bold ${!selectedNgo?.is_active ? 'bg-[#ffc107]/20 border-[#ffc107] text-[#ffc107]' : 'bg-black border-gray-600 hover:border-[#ffc107] text-gray-400 hover:text-[#ffc107]'}`}
+             >
+                STANDBY
+             </button>
+             <button 
+                onClick={() => handleStatusToggle(true)}
+                className={`px-4 py-2 border transition-all rounded cursor-pointer font-bold ${selectedNgo?.is_active ? 'bg-[#ffc107]/20 border-[#ffc107] text-[#ffc107]' : 'bg-black border-gray-600 hover:border-[#ffc107] text-gray-400 hover:text-[#ffc107]'}`}
+             >
+                ACTIVE
              </button>
            </div>
+        </HudPanel>
+        
+        <HudPanel title="Dispatch & Fulfill Case" color={THEME.primary} className="md:col-span-1 min-h-[90px] p-2">
+           <form 
+             className="flex items-center gap-2 h-full w-full"
+             onSubmit={async (e) => {
+               e.preventDefault();
+               const caseId = e.target.caseId.value;
+               if (!caseId || !selectedNgoId) return;
+               try {
+                 const apiClient = require('../api/client').default;
+                 await apiClient.post(`/cases/${caseId}/fulfill`, {
+                   action_summary: `Dispatched resources from ${selectedNgo?.name}`
+                 });
+                 // Deduct some stock automatically
+                 updateAvailability.mutate({
+                   id: selectedNgoId,
+                   updates: { food_units: Math.max(0, (selectedNgo.food_units || 0) - 10) }
+                 });
+                 e.target.reset();
+               } catch (err) {
+                 console.error(err);
+               }
+             }}
+           >
+             <input name="caseId" type="text" placeholder="CASE ID (e.g. C-...)" required className="bg-black border border-[#ffc107]/40 px-3 py-2 flex-1 min-w-0 text-[#ffc107] placeholder-[#ffc107]/40 outline-none rounded text-xs uppercase" />
+             <button type="submit" className="px-3 py-2 bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107] font-bold flex items-center gap-1.5 hover:bg-[#ffc107] hover:text-black transition-all shrink-0 rounded cursor-pointer uppercase">
+               <Navigation2 size={14} /> FULFILL
+             </button>
+           </form>
         </HudPanel>
       </div>
     </div>

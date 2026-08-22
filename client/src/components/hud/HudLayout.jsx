@@ -1,7 +1,9 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { ShieldAlert, Users, PlusSquare, Network } from 'lucide-react';
+import { ShieldAlert, Users, PlusSquare, Network, Power } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useSocket } from '../../contexts/SocketContext';
+import apiClient from '../../api/client';
 
 const AGENTS = [
   { path: '/complaint', name: 'SIGNAL', icon: ShieldAlert, color: '#ff1744', desc: 'Intake & Triage' },
@@ -12,6 +14,7 @@ const AGENTS = [
 
 const HudLayout = ({ children }) => {
   const location = useLocation();
+  const { demoMode, setDemoMode } = useSocket();
 
   return (
     <div className="relative min-h-screen bg-[#080808] text-gray-200 flex flex-col font-sans">
@@ -25,12 +28,9 @@ const HudLayout = ({ children }) => {
       {/* Top Nav */}
       <header className="relative z-20 border-b border-gray-800 bg-black/50 backdrop-blur-md px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-sm bg-gray-900 flex items-center justify-center border border-gray-700">
-            <Network size={20} className="text-[#00ff88]" />
-          </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold tracking-widest leading-none text-white">CYBER-HUD</h1>
-            <div className="text-[9px] sm:text-[10px] text-gray-400 font-mono tracking-widest mt-0.5">MULTI-AGENT DISASTER COORDINATION</div>
+            <h1 className="text-lg sm:text-xl font-bold tracking-widest leading-none text-white">ARAN</h1>
+            <div className="text-[9px] sm:text-[10px] text-gray-400 font-mono tracking-widest mt-0.5">AGENTIC RESPONSE & ASSISTANCE NETWORK</div>
           </div>
         </div>
 
@@ -66,6 +66,34 @@ const HudLayout = ({ children }) => {
               </NavLink>
             );
           })}
+          
+          <div className="ml-2 pl-2 border-l border-gray-800 flex items-center gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  await apiClient.post('/public/request', {
+                    name: 'Demo System',
+                    contact: '+1 555-0199',
+                    description: 'Massive structural collapse reported in central district. Multiple casualties expected. Urgent response required.',
+                    location: { lat: 28.61, lng: 77.20 },
+                    sector_id: 'S-77'
+                  });
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded transition-all text-xs font-mono font-bold tracking-wider bg-[#00e5ff]/20 border border-[#00e5ff] text-[#00e5ff] hover:bg-[#00e5ff] hover:text-black shadow-[0_0_10px_rgba(0,229,255,0.2)]"
+            >
+              RUN SCENARIO
+            </button>
+            <button
+              onClick={() => setDemoMode(!demoMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded transition-all text-xs font-mono font-bold tracking-wider ${demoMode ? 'bg-[#ffc107]/20 border border-[#ffc107] text-[#ffc107]' : 'bg-black border border-gray-700 text-gray-500 hover:text-gray-300'}`}
+            >
+              <Power size={14} className={demoMode ? 'animate-pulse' : ''} />
+              {demoMode ? 'DEMO ACTIVE' : 'LIVE'}
+            </button>
+          </div>
         </nav>
       </header>
 

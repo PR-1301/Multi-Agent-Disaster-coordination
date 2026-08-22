@@ -14,7 +14,8 @@ async function callLLM(promptText) {
   if (provider === 'gemini') {
     const openai = new OpenAI({
       apiKey: apiKey,
-      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      timeout: 5000
     });
     const response = await openai.chat.completions.create({
       model: 'gemini-1.5-flash',
@@ -24,7 +25,7 @@ async function callLLM(promptText) {
     const content = response.choices[0].message.content;
     return JSON.parse(content);
   } else if (provider === 'openai') {
-    const openai = new OpenAI({ apiKey: apiKey });
+    const openai = new OpenAI({ apiKey: apiKey, timeout: 5000 });
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: promptText }],
@@ -34,10 +35,11 @@ async function callLLM(promptText) {
   } else if (provider === 'nvidia') {
     const openai = new OpenAI({ 
       apiKey: process.env.LLM_API_KEY, 
-      baseURL: process.env.LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1' 
+      baseURL: process.env.LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+      timeout: 5000
     });
     const response = await openai.chat.completions.create({
-      model: 'meta/llama-3.1-70b-instruct',
+      model: 'meta/llama-3.1-8b-instruct',
       messages: [{ role: 'user', content: promptText }],
       response_format: { type: "json_object" }
     });

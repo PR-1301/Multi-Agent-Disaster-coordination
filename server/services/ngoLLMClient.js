@@ -7,14 +7,14 @@ require('dotenv').config();
  * Returns { recommended_facility_id, reasoning } or null if it fails/times out.
  */
 async function evaluateNgoCandidates(caseDetails, candidates) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.LLM_API_KEY;
+  const apiKey = process.env.NGO_LLM_API_KEY;
   
   if (!apiKey) {
-    console.log('[ngoLLMClient] LLM_API_KEY not found. Skipping LLM evaluation (falling back to deterministic).');
+    console.log('[ngoLLMClient] NGO_LLM_API_KEY not found. Skipping LLM evaluation (falling back to deterministic).');
     return null;
   }
 
-  const provider = process.env.LLM_PROVIDER || 'openai';
+  const provider = process.env.NGO_LLM_PROVIDER || 'nvidia';
   const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS, 10) || 5000;
 
   try {
@@ -43,17 +43,18 @@ Output STRICT JSON matching exactly this format (do not include markdown blocks,
     let model;
     
     if (provider === 'nvidia') {
-      const baseURL = process.env.LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
-      openai = new OpenAI({ apiKey, baseURL });
-      model = process.env.LLM_MODEL || 'meta/llama3-70b-instruct';
+      const baseURL = process.env.NGO_LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+      openai = new OpenAI({ apiKey, baseURL, timeout: 5000 });
+      model = process.env.NGO_LLM_MODEL || 'meta/llama-3.1-70b-instruct';
     } else if (provider === 'gemini') {
       openai = new OpenAI({
         apiKey: apiKey,
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        timeout: 5000
       });
       model = 'gemini-1.5-flash';
     } else {
-      openai = new OpenAI({ apiKey: apiKey });
+      openai = new OpenAI({ apiKey: apiKey, timeout: 5000 });
       model = 'gpt-4o-mini';
     }
 
